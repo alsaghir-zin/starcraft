@@ -18,14 +18,20 @@ def clear():
 
 warrior_spec = [{
     'name': "Melee",
-    'nickname': "M",
+    #'nickname': "M",
+    'nickname': "",
+    'start' : '\033[4m',
+    'end' :'\033[0m',
     'health': 120,
     'min': 20,
     'max': 30,
     'range': 0
 }, {
     'name': "Ranged",
-    'nickname': "R",
+    #'nickname': "R",
+    'nickname': "",
+    'start' : '',
+    'end' :'',
     'health': 80,
     'min': 10,
     'max': 20,
@@ -42,9 +48,9 @@ faction_color = [
 
 # Global variable shared by all threads.
 out_file_name = "battle_log.txt"
-faction_num = 2  # 2 -> 8
+faction_num = 4  # 2 -> 8
 faction_size = 5  # Numbers of warriors in each faction
-MAP_SIZE = 8 # 5 -> 100
+MAP_SIZE = 30 # 5 -> 100
 KINDS = 2
 global_counter = 0
 seed = 4
@@ -52,7 +58,19 @@ round = 10
 epoch = 0
 war = True
 warrior_speed=0.2
-cell_size = 9
+cell_size=3
+surrounding = False
+lines=True
+walls=True
+
+if MAP_SIZE > 24:
+    cell_size=1
+if MAP_SIZE > 24:
+    lines=False
+    walls=False
+if faction_num * faction_size > 10:
+    cell_size=2
+
 
 map = [[] for i in range(0, (MAP_SIZE * MAP_SIZE))]
 # A lock to ensure thread-safe updates to the global variable.
@@ -66,6 +84,7 @@ class Fighter:
     def __init__(self, id, kind, faction):
         self.epoch_last_move = 0
         self.epoch_last_attack = 0
+        self.epoch_last_flush = 0
         self.kill_count = 0
         self.lock = threading.Lock()
         self.id = id
@@ -79,7 +98,7 @@ class Fighter:
         self.range = warrior_spec[kind]["range"]
         self.alive = True
         self.rounds = 0
-        self.location = random.randint(0, MAP_SIZE * MAP_SIZE)
+        self.location = random.randint(0, MAP_SIZE * MAP_SIZE) # Global random
         self.prev_location = self.location
 
     def moveto(self, location):
@@ -101,7 +120,7 @@ class Fighter:
             return
         if target.faction == self.faction:  # Normally already filtered out
             print(
-                f"{epoch}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id} cowardly tried to  {target.name} {target.id} from the same faction",
+                f"{epoch:<4}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id} cowardly tried to  {target.name} {target.id} from the same faction",
                 file=out_file,
                 end="\n")
             return
@@ -117,36 +136,40 @@ class Fighter:
                     target.alive = False
                     self.kill_count += 1
                     print(
-                        f"{epoch}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id} attacked {target.name} {target.id} and killed it",
+                        f"{epoch:<4}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id} {dposition(army[self.id].location)} attacked {target.name} {target.id} {dposition(army[target.id].location)}  with damage {damage} and killed it",
                         file=out_file,
                         end="\n")
                 else:
                     print(
-                        f"{epoch}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id} attacked {target.name} {target.id} {target.health}",
+                        f"{epoch:<4}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id}  {dposition(army[self.id].location)} attacked {target.name} {target.id} {dposition(army[target.id].location)}  with damage {damage} {target.health}",
                         file=out_file,
                         end="\n")
         finally:
             self.lock.release()
             target.lock.release()
 
+def dposition(x):
+    return(f"({x//MAP_SIZE},{x%MAP_SIZE})" if x < MAP_SIZE * MAP_SIZE else "out of map")
 
 def possible_moves(position):
     moves = []
-    if position % MAP_SIZE != 0:  # Not First column
+    if position % MAP_SIZE != 0:                # Not First column
         moves.append(position - 1)
     if position % MAP_SIZE != (MAP_SIZE - 1):  # Not Last column
         moves.append(position + 1)
-    if position >= MAP_SIZE:  # Not first row
+    if position >= MAP_SIZE:                    # Not first row
         moves.append(position - MAP_SIZE)
-        if (position - MAP_SIZE) % MAP_SIZE != 0:
+        if surrounding:                         # surrounding but not adjacent
+         if (position - MAP_SIZE) % MAP_SIZE != 0:           
             moves.append(position - MAP_SIZE - 1)
-        if (position - MAP_SIZE) % MAP_SIZE != MAP_SIZE - 1:
+         if (position - MAP_SIZE) % MAP_SIZE != MAP_SIZE - 1:
             moves.append(position - MAP_SIZE + 1)
     if position < (MAP_SIZE * (MAP_SIZE - 1)):  # Not last row
         moves.append(position + MAP_SIZE)
-        if (position + MAP_SIZE) % MAP_SIZE != 0:
+        if surrounding:                         # surrounding but not adjacent
+         if (position + MAP_SIZE) % MAP_SIZE != 0:
             moves.append(position + MAP_SIZE - 1)
-        if (position + MAP_SIZE) % MAP_SIZE != MAP_SIZE - 1:
+         if (position + MAP_SIZE) % MAP_SIZE != MAP_SIZE - 1:
             moves.append(position + MAP_SIZE + 1)
     return [i for i in moves if i >= 0 and i < (MAP_SIZE * MAP_SIZE)]
 
@@ -191,31 +214,45 @@ def print_map():
     i = 0
     j = 0
     print(end="\n\n")
-    
-    print(''.ljust((cell_size+1)*MAP_SIZE+1,'-'),end="\n")
+    if lines:
+     print(''.ljust((cell_size+1)*MAP_SIZE+1,'-'),end="\n")
     for i in range(0, MAP_SIZE):
-        print("|", end="")
-        for j in range(0, MAP_SIZE):
-            rawbuffer = ",".join("%s%d%d" % (warrior_spec[army[x].kind]["nickname"], army[x].faction, x) for x in map[i * MAP_SIZE + j])
-            lpadding = cell_size - len(rawbuffer)
-            if lpadding < 0:
-                lpadding = 0
-            padding = ' '.ljust(lpadding)
-            buffer=",".join(colored("%s%d%d" % (warrior_spec[army[x].kind]["nickname"], army[x].faction, x),faction_color[army[x].faction]) for x in map[i * MAP_SIZE + j])
-            print(f"{buffer}{padding}",end="")
-
+        if walls:
             print("|", end="")
+        for j in range(0, MAP_SIZE):
+            rawbuffer = ",".join("%s%d" % (warrior_spec[army[x].kind]["nickname"], x) for x in map[i * MAP_SIZE + j])
+            lpadding = cell_size-len(rawbuffer)
+            if lpadding <= 0:
+                lpadding = 0
+                padding=""
+            else:
+                padding = ' '.ljust(lpadding)
+            buffer=",".join(colored("%s%s%d%s" % (warrior_spec[army[x].kind]["start"],warrior_spec[army[x].kind]["nickname"],x,warrior_spec[army[x].kind]["end"]),faction_color[army[x].faction]) for x in map[i * MAP_SIZE + j])
+            print(f"{buffer}{padding}",end="")
+            if walls:
+                print("|", end="")    
         print(end="\n")
-        print(''.ljust((cell_size+1)*MAP_SIZE+1,'-'),end="\n")
+        if lines:
+         print(''.ljust((cell_size+1)*MAP_SIZE+1,'-'),end="\n")
     for x in range(faction_num):   
-     print(colored("%s" % (faction_name[x]) ,faction_color[x]))
-
+     print(colored(f"{faction_name[x]:<16}",faction_color[x]),end="")
+     for y in army:
+        if y.faction == x:
+                 print(f"{y.id:<2}",end=" ")
+     print(end=" -- ")
+     for y in army:
+      
+         if y.faction == x:
+            print(f"{y.health:<4}",end=" ")
+     print(end="\n")
 
 
 def display(thread_id):
     global map
     global army
     global war
+    global epoch
+    local_epoch=0
     while epoch < 10 or threading.active_count() > 3:
         for thread_id in range(0, len(army)):
             try:
@@ -232,6 +269,18 @@ def display(thread_id):
                     map[army[thread_id].location].append(thread_id)
             except Exception as e:
                 pass
+        
+        for x in range(len(map)):
+                for y in map[x]:
+                    if army[y].location != x:
+                        try:
+                            map[x].remove(y)
+                            print(f"{epoch:<4}[Display]  {y} ghosting in {dposition(x)}",
+                                file=out_file,
+                                end="\n")
+                        except Exception as e:
+                            pass
+                            
         clear()
         print_map()
         time.sleep(0.3)
@@ -245,16 +294,17 @@ def clock(thread_id
     global_counter += 1
     while epoch < 10 or threading.active_count(
     ) > 3:  # Main , the clock and the display
-        time.sleep(1)
+        time.sleep(1) 
         epoch = epoch + 1
         factions_left = set([x.faction_name for x in army if x.alive])
         if war and len(factions_left) == 1:
             war = False
             winner = next(iter(factions_left))
-            print(f"[Faction {winner}] won the battle",
+            print(f"{epoch:<4}[Faction {winner}] won the battle",
                   file=out_file,
                   end="\n")
-
+        print(file=out_file,end="", flush=True)
+        
 
 def worker(thread_id, seed):
     # Local variable specific to each thread.
@@ -270,7 +320,7 @@ def worker(thread_id, seed):
         # I am leaving this world
         if not army[thread_id].alive:
             print(
-                f"{epoch}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} ciao",
+                f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} died in {dposition(army[thread_id].location)} with {army[thread_id].kill_count} victory(ies)",
                 file=out_file,
                 end="\n")
             break
@@ -296,13 +346,17 @@ def worker(thread_id, seed):
             location = random_pos(army[thread_id].location, local_random)
             army[thread_id].moveto(location)
             print(
-                f"{epoch}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} , {army[thread_id].prev_location}->{army[thread_id].location}",
+                f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} , {dposition(army[thread_id].prev_location)} -> {dposition(army[thread_id].location)} ",
                 file=out_file,
                 end="\n")
+        if army[thread_id].epoch_last_flush < epoch:
+            army[thread_id].epoch_last_flush = epoch
+            print(file=out_file,end="", flush=True)
         time.sleep(warrior_speed)  # Simulate work.
+        
     if army[thread_id].alive:
         print(
-            f"{epoch}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} going back home",
+            f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} {dposition(army[thread_id].location)} going back home with {army[thread_id].kill_count} victory(ies)",
             threading.active_count(),
             file=out_file,
             end="\n")
@@ -313,11 +367,11 @@ threads = []
 units = 0
 army = []
 if seed > 0:
-    random.seed(seed)
+    random.seed(seed) # Global random
 
 for i in range(0, faction_num):
     for j in range(0, faction_size):
-        army.append(Fighter(units, random.randint(0, KINDS - 1), i))
+        army.append(Fighter(units, random.randint(0, KINDS - 1), i)) # Global random
         units += 1
 
 # Clock
@@ -342,4 +396,4 @@ for i in range(units):
 for t in threads:
     t.join()
 
-print("Final global_counter:", global_counter, file=out_file)
+print(f"{epoch:<4}Final global_counter: {global_counter}", file=out_file)
