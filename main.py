@@ -58,7 +58,7 @@ faction_color = [
 FACTION_NUM = 2  # 4  # 2 -> 8
 FACTION_SIZE = 5  # Numbers of warriors in each faction
 MAP_SIZE = 5  # 30 # 5 -> 100
-low_thread_watermark = 4  # clock + map + draw + main
+low_thread_watermark = 3  # clock  + draw + main
 out_file_name = "battle_log.txt"
 number_of_unit_types = len(unit_types)
 seed = 4
@@ -81,13 +81,11 @@ if MAP_SIZE > 24:
 if FACTION_NUM * FACTION_SIZE > 10:
     cell_size = 2
 
-
 queue_map_event = Queue()
-
 out_file = open(out_file_name, 'w')
 
 class Map:
-    def __init__(self, id,size):
+    def __init__(self,size):
         self.lock = threading.Lock()
         self.map = [[] for i in range(0, (MAP_SIZE * MAP_SIZE))]
         self.copy = []
@@ -135,7 +133,7 @@ class Map:
             pass
         self.celllock[location].release()
         self.shred()
-        
+
     def bury(self,location,unit):
         self.xerox()
         self.celllock[location].acquire()
@@ -189,7 +187,6 @@ class Fighter:
                         f"{epoch:<4}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id} queue full",
                         file=out_file,
                         end="\n")
-                #print(self.id,"is on the move from ",self.prev_location," to ",self.location)
         finally:
             self.lock.release()
         return (success)
@@ -273,15 +270,14 @@ def distance(position1, position2, range):
 
 
 def possible_attack(position, id, range, faction, all=False):
-    global map
+    global battlemap
 
     candidate = []
 
-    maplock.acquire()
+    map=battlemap.get()
     for position in possible_moves(position, range, all=all):
         candidate.extend(map[position])
-    maplock.release()
-
+    
     for friend_of_foe in army:
         if friend_of_foe.faction == faction and friend_of_foe.id in candidate:
             candidate.remove(friend_of_foe.id)
@@ -294,11 +290,12 @@ def random_pos(position, local_random):
 
 
 def print_map():
-    global map
+    global battlemap
     global army
     allfactions = {}
     i = 0
     j = 0
+    map=battlemap.get()
     print(end="\n\n")
     if lines:
         print(''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'), end="\n")
@@ -340,56 +337,13 @@ def print_map():
                 print(f"{y.health:<4}", end=" ")
         print(end="\n")
 
-def update_map():
-    global map
-    global maplock
-    newmap = [[] for i in range(0, (MAP_SIZE * MAP_SIZE))]
-    maplock.acquire()
-    for unit in range(0, len(army)):
-        if army[unit].alive:
-            newmap[army[unit].location].append(unit)
-    map = newmap
-    maplock.release()
+
     
-def map_thread(thread_id, queue_map_event):
-    global map
-    global army
-    global war
-    global epoch
-    global low_thread_watermark
-    local_epoch = 0
-    while peace or threading.active_count() > low_thread_watermark:
-        try:
-            event = queue_map_event.get(block=True, timeout=1)
-        except Empty:
-            pass
-        update_map()
-        print(
-                f"{epoch:<4}GMap {map}",
-                file=out_file,
-                end="\n")
-        print(file=out_file, end="", flush=True)
-        while not queue_map_event.empty():
-             try:
-                event = queue_map_event.get(False)
-                if event == 1:
-                    update_map()
-                    print(
-                        f"{epoch:<4}GMap {map}",
-                        file=out_file,
-                        end="\n")
-                    print(file=out_file, end="", flush=True)
-             except Empty:
-                pass
-        
 
 
 def draw_thread(thread_id, queue_map_event):
-    global map
-    global army
-    global war
-    global epoch
     global low_thread_watermark
+    global peace
     local_epoch = 0
     while peace or threading.active_count() > low_thread_watermark:
         clear()
@@ -427,11 +381,12 @@ def fighter_thread(thread_id, seed, queue_map_event):
     local_random = random.Random()
     if seed > 0:
         local_random.seed(seed + thread_id)
-    global map
+    global battlemap
     global army
     while war:
         # I am leaving this world
         if not army[thread_id].alive:
+            battlemap.bury(army[thread_id].location,thread_id)
             print(
                 f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} died in {dposition(army[thread_id].location)} with {army[thread_id].kill_count} victory(ies)",
                 file=out_file,
@@ -456,8 +411,11 @@ def fighter_thread(thread_id, seed, queue_map_event):
                                    army[thread_id].faction)
         if army[thread_id].epoch_last_move < epoch and len(hostiles) == 0:
             #print("Check for move no hostiles", army[thread_id].name,thread_id, hostiles)
+            previouslocation = army[thread_id].location
             location = random_pos(army[thread_id].location, local_random)
             if army[thread_id].moveto(location, queue_map_event):
+                # We update the map
+                battlemap.moveto(previouslocation,location,thread_id)
                 print(
                     f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} , {dposition(army[thread_id].prev_location)} -> {dposition(army[thread_id].location)} ",
                     file=out_file,
@@ -468,7 +426,6 @@ def fighter_thread(thread_id, seed, queue_map_event):
         time.sleep(warrior_speed)  # Simulate work.
 
     if army[thread_id].alive:
-        print(
             f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} {dposition(army[thread_id].location)} going back home with {army[thread_id].kill_count} victory(ies)",
             threading.active_count(),
             file=out_file,
@@ -476,6 +433,8 @@ def fighter_thread(thread_id, seed, queue_map_event):
 
 
 # Create a list to hold our thread objects.
+
+battlemap = Map(MAP_SIZE)
 threads = []
 units = 0
 army = []
@@ -513,9 +472,8 @@ for i in range(0, FACTION_NUM):
             if len(possible_attack(candidateposition, units, 1, i, all=True)) == 0:
                 army.append(Fighter(units, random.randint(0, number_of_unit_types - 1), i,
                         candidateposition))
-                update_map()
-                #queue_map_event.put(1)
-                #queue_map_event.put(1)
+                battlemap.moveto(candidateposition,candidateposition)
+                queue_map_event.put(1)
                 units += 1
                 giveashot=0
                 
