@@ -1,14 +1,15 @@
-0   GMap [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
-Candidate 0 is inspecting (2,3)[]
-Candiate 1 is rejected []
-Candidate 1 is inspecting (1,4)[]
-Candiate 2 is rejected []
-Candidate 2 is inspecting (4,1)[]
-Candiate 3 is rejected []
-Candidate 3 is inspecting (1,3)[]
-Candiate 4 is rejected []
-Candidate 4 is inspecting (1,1)[]
-Candiate 5 is rejected []
-Candidate 5 is inspecting (4,3)[]
-Candiate 6 is rejected []
-Candidate 6 is inspecting out of map[]
+1   [Faction Uni staff] Ranged 0 , (2,3) -> (2,4) 
+1   [Faction Uni staff] Melee 2 , (4,1) -> (5,1) 
+1   [Faction Uni staff] Ranged 1 , (1,4) -> (2,4) 
+1   [Faction Uni staff] Ranged 4 , (1,1) -> (1,2) 
+1   [Faction Uni staff] Melee 3 , (1,3) -> (1,4) 
+1   [Faction The Goblins] Ranged 5 , (4,3) -> (5,3) 
+1   [Faction The Goblins] Melee 6 , (5,5) -> (5,4) 
+1   [Faction The Goblins] Ranged 7 , (4,3) -> (5,3) 
+1   [Faction The Goblins] Melee 8 , (5,5) -> (4,5) 
+1   [Faction The Goblins] Ranged 9 , (5,4) -> (5,5) 
+1   [Faction The Orcs] Melee 10 , (3,5) -> (3,4) 
+1   [Faction The Orcs] Ranged 11  (3,5) attacked Melee 8 (4,5)  with damage 10 110
+1   [Faction The Orcs] Melee 13 , (3,5) -> (4,5) 
+1   [Faction The Orcs] Ranged 14  (3,5) attacked Melee 8 (4,5)  with damage 11 99
+1   [Faction The Orcs] Ranged 12  (3,5) attacked Melee 8 (4,5)  with damage 17 82
