@@ -81,13 +81,71 @@ if MAP_SIZE > 24:
 if FACTION_NUM * FACTION_SIZE > 10:
     cell_size = 2
 
-# Map and associated locks
-map = [[] for i in range(0, (MAP_SIZE * MAP_SIZE))]
-maplock = threading.Lock()
+
 queue_map_event = Queue()
 
 out_file = open(out_file_name, 'w')
 
+class Map:
+    def __init__(self, id,size):
+        self.lock = threading.Lock()
+        self.map = [[] for i in range(0, (MAP_SIZE * MAP_SIZE))]
+        self.copy = []
+        self.pending = 0
+        self.celllock = [threading.Lock() for i in range(0, (MAP_SIZE * MAP_SIZE))]
+    
+    def get(self)
+        self.lock.acquire()
+        viewmap=[]
+        if len(self.copy)==0:
+            viewmap=self.map # You got the current map , not a copy
+        else:
+            viewmap=self.copy # Changes are ongoing ... sorry
+        self.lock.release()
+        return(viewmap)
+    
+    def xerox(self)
+        self.lock.acquire()
+        if len(self.copy)==0: 
+         self.copy = self.map
+        self.pending +=1 
+        self.lock.release()
+
+    def shred(self)    
+        self.lock.acquire()
+        self.pending -=1
+        if self.pending <= 0:
+         self.copy = []
+        self.lock.release()
+
+    def moveto(self,previous,location,unit,):
+        self.xerox()
+        if previous != location:
+         self.celllock[previous].acquire()
+         try:
+            self.map[previous].remove(unit)
+         except ValueError:
+            pass
+         self.celllock[previous].release()
+        self.celllock[location].acquire()
+        if unit not in self.map[location]
+         try:
+            self.map[location].extend(unit)
+         except ValueError:
+            pass
+        self.celllock[location].release()
+        self.shred()
+        
+    def bury(self,location,unit):
+        self.xerox()
+        self.celllock[location].acquire()
+        try:
+            self.map[location].remove(unit)
+        except ValueError:
+            pass
+        self.celllock[location].release()
+        self.shred()
+        
 
 class Fighter:
 
