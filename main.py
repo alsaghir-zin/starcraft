@@ -218,7 +218,7 @@ class Fighter:
                         end="\n")
                 else:
                     print(
-                        f"{epoch:<4}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id}  {dposition(army[self.id].location)} attacked {target.name} {target.id} {dposition(army[target.id].location)}  with damage {damage} {target.health}",
+                        f"{epoch:<4}[Faction {army[self.id].faction_name}] {army[self.id].name} {self.id}  {dposition(army[self.id].location)} attacked {target.name} {target.id} {dposition(army[target.id].location)}  with damage {damage} ({target.health})",
                         file=out_file,
                         end="\n")
         finally:
@@ -346,7 +346,18 @@ def draw_thread(thread_id, queue_map_event):
     while peace or threading.active_count() > low_thread_watermark:
         clear()
         print_map()
-        time.sleep(0.5)
+        # Wait 0.5 or event 
+        try:
+         event = queue_map_event.get(block=True, timeout=0.5)
+        except Empty:
+         pass
+        # Empty the queue
+        while not queue_map_event.empty():
+         try:
+            event = queue_map_event.get(False)
+         except Empty:
+            pass
+        
 
 
 # Not perfect but will be more repeatable ( cf seed stuff )
