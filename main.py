@@ -1,11 +1,10 @@
+from threading import Condition
 import threading
 import time
 import random
 from termcolor import colored
 import sys
 import os
-
-from queue import Empty, Queue
 
 # import call method from subprocess module
 from subprocess import call
@@ -64,14 +63,18 @@ number_of_unit_types = len(unit_types)
 seed = 4   # Seed for main thread
 epoch = 0  # Will be updated by the clock
 
+clock_tick = Condition()    # To wake up all thread at the same time
+condition_map = Condition() # To redraw the map ?
+
+cadence = True           # All fighter will wake up at the same time 
 war = True   # Battle is running
 peace = True # Peace  
-warrior_speed = 0.1 # Reaction time for warriors
-cell_size = 3       # Cell size
+warrior_speed = 10   #  "Reaction time for warriors" - number of try per seconds
+cell_size = 3        # Cell size
 surrounding = False  # We do adjacent , not diagonal aka surrounding
 lines = True         # We draw the line
 walls = True         # We draw the cell wall
-step = 5             # We slow the clock interval
+step = 1             # We slow the clock interval
 
 if MAP_SIZE > 24:
     cell_size = 1
@@ -81,7 +84,6 @@ if MAP_SIZE > 24:
 if FACTION_NUM * FACTION_SIZE > 10:
     cell_size = 2
 
-queue_map_event = Queue()
 out_file = open(out_file_name, 'w')
 
 class Map:
@@ -181,7 +183,7 @@ class Fighter:
         self.location = location
         self.prev_location = self.location
 
-    def moveto(self, location, queue_map_event):
+    def moveto(self, location, condition_map):
         if not self.alive:
             return
         success = False
@@ -194,7 +196,6 @@ class Fighter:
                 self.epoch_last_move = epoch
                 self.rounds += 1
                 success = True
-                queue_map_event.put(0)
                 
         finally:
             self.fighterlock.release()
@@ -350,37 +351,40 @@ def print_map():
     
 
 
-def draw_thread(thread_id, queue_map_event):
+def draw_thread(thread_id, condition_map):
     global low_thread_watermark
     global peace
     local_epoch = 0
     while peace or threading.active_count() > low_thread_watermark:
         clear()
         print_map()
-        # Wait 0.5 or event 
+        # Wait 0.5 or event
         try:
-         event = queue_map_event.get(block=True, timeout=0.5)
+         condition_map.acquire()
+         condition_map.wait(timeout=0.5)
+         condition_map.release()
         except Empty:
-         pass
-        # Empty the queue
-        while not queue_map_event.empty():
-         try:
-            event = queue_map_event.get(False)
-         except Empty:
             pass
         
 
 
 # Not perfect but will be more repeatable ( cf seed stuff )
-def clock_thread(thread_id, queue_map_event):
+def clock_thread(thread_id, condition_map):
     global epoch
     global war
     global low_thread_watermark
     global step
     while peace or threading.active_count(
     ) > low_thread_watermark:  # Main , the clock and the display
-        time.sleep(step)
-        epoch = epoch + 1
+        for tick in range(warrior_speed):
+            clock_tick.acquire()
+            time.sleep(step/warrior_speed)
+            if tick == 0:
+             epoch = epoch + 1
+            clock_tick.notify_all()
+            clock_tick.release()
+        
+
         if not peace:
          factions_left = set([x.faction_name for x in army if x.alive])
          if war and len(factions_left) == 1:
@@ -390,10 +394,11 @@ def clock_thread(thread_id, queue_map_event):
                   file=out_file,
                   end="\n")
         print(file=out_file, end="", flush=True)
+
     print(f"{epoch:<4}[Clock] is leaving", file=out_file, end="\n")
 
 
-def fighter_thread(thread_id, seed, queue_map_event):
+def fighter_thread(thread_id, seed, condition_map):
     # Local variable specific to each thread.
     global epoch
     global war
@@ -425,6 +430,9 @@ def fighter_thread(thread_id, seed, queue_map_event):
                 if army[thread_id].epoch_last_attack < epoch and army[
                         target].alive:
                     army[thread_id].attack(army[target], local_random)
+                    condition_map.acquire()
+                    condition_map.notify()
+                    condition_map.release()
         # Check if move possible
         hostiles = possible_attack(army[thread_id].location, thread_id,
                                    army[thread_id].range,
@@ -433,17 +441,26 @@ def fighter_thread(thread_id, seed, queue_map_event):
             #print("Check for move no hostiles", army[thread_id].name,thread_id, hostiles)
             previouslocation = army[thread_id].location
             location = random_pos(army[thread_id].location, local_random)
-            if army[thread_id].moveto(location, queue_map_event):
+            if army[thread_id].moveto(location, condition_map):
                 # We update the map
                 battlemap.moveto(previouslocation,location,thread_id)
                 print(
                     f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} , {dposition(army[thread_id].prev_location)} -> {dposition(army[thread_id].location)} ",
                     file=out_file,
                     end="\n")
+                condition_map.acquire()
+                condition_map.notify()
+                condition_map.release()
         if army[thread_id].epoch_last_flush < epoch:
             army[thread_id].epoch_last_flush = epoch
             print(file=out_file, end="", flush=True)
-        time.sleep(warrior_speed)  # Simulate work.
+        
+        if cadence:
+         clock_tick.acquire()
+         clock_tick.wait()
+         clock_tick.release()
+        else:
+            time.sleep(1/warrior_speed)  # Simulate work.
 
     if army[thread_id].alive:
             print(f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} {dposition(army[thread_id].location)} going back home with {army[thread_id].kill_count} victory(ies)",file=out_file,end="\n")
@@ -459,13 +476,14 @@ if seed > 0:
     random.seed(seed)  # Global random
 
 # Clock
-t = threading.Thread(target=clock_thread, args=(units, queue_map_event))
+t = threading.Thread(target=clock_thread, args=(units, condition_map))
 threads.append(t)
 t.start()
 
 
 # Draw thread
-t = threading.Thread(target=draw_thread, args=(units + 2, queue_map_event))
+t = threading.Thread(target=clock_thread, args=(units, condition_map))
+t = threading.Thread(target=draw_thread, args=(units + 2, condition_map))
 threads.append(t)
 t.start()
 
@@ -482,7 +500,9 @@ for i in range(0, FACTION_NUM):
                 army.append(Fighter(units, random.randint(0, number_of_unit_types - 1), i,
                         candidateposition))
                 battlemap.moveto(candidateposition,candidateposition,units)
-                queue_map_event.put(1)
+                condition_map.acquire()
+                condition_map.notify()
+                condition_map.release()
                 units += 1
                 giveashot=-units
                 
@@ -498,7 +518,7 @@ for i in range(units):
                          args=(
                              i,
                              seed,
-                             queue_map_event,
+                             condition_map,
                          ))
     threads.append(t)
     t.start()
