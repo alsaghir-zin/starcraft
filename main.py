@@ -65,16 +65,16 @@ epoch = 0  # Will be updated by the clock
 
 clock_tick = Condition()    # To wake up all thread at the same time
 condition_map = Condition() # To redraw the map ?
+start_gun = Condition()
 
 cadence = True           # All fighter will wake up at the same time 
 war = True   # Battle is running
 peace = True # Peace  
-warrior_speed = 10   #  "Reaction time for warriors" - number of try per seconds
 cell_size = 3        # Cell size
 surrounding = False  # We do adjacent , not diagonal aka surrounding
 lines = True         # We draw the line
 walls = True         # We draw the cell wall
-step = 1             # We slow the clock interval
+
 
 if MAP_SIZE > 24:
     cell_size = 1
@@ -373,18 +373,21 @@ def clock_thread(thread_id, condition_map):
     global epoch
     global war
     global low_thread_watermark
-    global step
+    
+    start_gun.acquire()
+    start_gun.wait()
+    start_gun.release()
+
     while peace or threading.active_count(
     ) > low_thread_watermark:  # Main , the clock and the display
-        for tick in range(warrior_speed):
+        for tick in range(10):
             clock_tick.acquire()
-            time.sleep(step/warrior_speed)
-            if tick == 0:
+            time.sleep(0.1)
+            if tick == 9:
              epoch = epoch + 1
             clock_tick.notify_all()
             clock_tick.release()
         
-
         if not peace:
          factions_left = set([x.faction_name for x in army if x.alive])
          if war and len(factions_left) == 1:
@@ -402,12 +405,14 @@ def fighter_thread(thread_id, seed, condition_map):
     # Local variable specific to each thread.
     global epoch
     global war
-    local_counter = 0
     local_random = random.Random()
     if seed > 0:
         local_random.seed(seed + thread_id)
     global battlemap
     global army
+    start_gun.acquire()
+    start_gun.wait()
+    start_gun.release()
     while war:
         # I am leaving this world
         if not army[thread_id].alive:
@@ -418,8 +423,6 @@ def fighter_thread(thread_id, seed, condition_map):
                 end="\n")
             break
 
-        # Update the local counter.
-        local_counter += 1
 
         # Check if attack possible
         hostiles = possible_attack(army[thread_id].location, thread_id,
@@ -460,7 +463,7 @@ def fighter_thread(thread_id, seed, condition_map):
          clock_tick.wait()
          clock_tick.release()
         else:
-            time.sleep(1/warrior_speed)  # Simulate work.
+            time.sleep(0.1)  # Simulate work.
 
     if army[thread_id].alive:
             print(f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} {dposition(army[thread_id].location)} going back home with {army[thread_id].kill_count} victory(ies)",file=out_file,end="\n")
@@ -523,8 +526,11 @@ for i in range(units):
     threads.append(t)
     t.start()
 
+sleep(0.5)
+start_gun.acquire()
+start_gun.notify_all()
+start_gun.release()
 
-peace=False
 
     
 # Wait for all threads to complete.
