@@ -50,7 +50,7 @@ faction_name = [
     "The Dragons", "The Golems", "The Gnomes"
 ]
 faction_color = [
-    'red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white', 'grey'
+    'red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'black', 'grey'
 ]
 
 # Global variable shared by all threads.
@@ -61,17 +61,17 @@ MAP_SIZE = 5  # 30 # 5 -> 100
 low_thread_watermark = 3  # clock  + draw + main
 out_file_name = "battle_log.txt"
 number_of_unit_types = len(unit_types)
-seed = 4
-round = 10
-epoch = 0
-war = True
-peace = True
-warrior_speed = 0.1
-cell_size = 3
-surrounding = False  # diagonal OK ?
-lines = True
-walls = True
-step = 3
+seed = 4   # Seed for main thread
+epoch = 0  # Will be updated by the clock
+
+war = True   # Battle is running
+peace = True # Peace  
+warrior_speed = 0.1 # Reaction time for warriors
+cell_size = 3       # Cell size
+surrounding = False  # We do adjacent , not diagonal aka surrounding
+lines = True         # We draw the line
+walls = True         # We draw the cell wall
+step = 5             # We slow the clock interval
 
 if MAP_SIZE > 24:
     cell_size = 1
@@ -86,65 +86,76 @@ out_file = open(out_file_name, 'w')
 
 class Map:
     def __init__(self,size):
-        self.lock = threading.Lock()
+        self.maplock = threading.Lock()
         self.map = [[] for i in range(0, (MAP_SIZE * MAP_SIZE))]
         self.copy = []
         self.pending = 0
-        self.celllock = [threading.Lock() for i in range(0, (MAP_SIZE * MAP_SIZE))]
+        self.tilelock = [threading.Lock() for i in range(0, (MAP_SIZE * MAP_SIZE))]
     
     def get(self):
-        self.lock.acquire()
+        self.maplock.acquire()
         viewmap=[]
         if len(self.copy)==0:
             viewmap=self.map # You got the current map , not a copy
         else:
             viewmap=self.copy # Changes are ongoing ... sorry
-        self.lock.release()
+        self.maplock.release()
         return(viewmap)
     
     def xerox(self):
-        self.lock.acquire()
+        self.maplock.acquire()
+        # We take a copy if none exists
         if len(self.copy)==0: 
          self.copy = self.map
         self.pending +=1 
-        self.lock.release()
+        self.maplock.release()
 
     def shred(self):
-        self.lock.acquire()
+        self.maplock.acquire()
         self.pending -=1
+        # We a really destroying the map
         if self.pending <= 0:
          self.copy = []
-        self.lock.release()
+        self.maplock.release()
 
     def moveto(self,previous,location,unit):
         self.xerox()
+        # From this point get() will provide self.copy and not self.map
         if previous < 0 or previous >= MAP_SIZE * MAP_SIZE or location < 0 or location >= MAP_SIZE * MAP_SIZE:
            print(f"{epoch:<4}[Faction {army[unit].faction_name}] {army[unit].name} {unit} invalid location {previous } {location}",file=out_file,end="\n")  
            return
+        
+        # Start of the tile protection
         if previous != location:
-         self.celllock[previous].acquire()
-         try:
+         self.tilelock[previous].acquire()
+        self.tilelock[location].acquire() 
+        try:
             self.map[previous].remove(unit)
-         except ValueError:
-            pass
-         self.celllock[previous].release()
-        self.celllock[location].acquire()
+        except ValueError:
+            pass        
         if unit not in self.map[location]:
          try:
             self.map[location].append(unit)
          except ValueError:
             pass
-        self.celllock[location].release()
+        # End of the tile protection 
+        self.tilelock[location].release()
+        if previous != location:
+         self.tilelock[previous].release()
+        
+        # From this point we will destroy self.copy if nobody is changing the map
         self.shred()
 
-    def bury(self,location,unit):
+    def bury(self,location,unit): # A fighter is leaving the battlefield
         self.xerox()
-        self.celllock[location].acquire()
+        # From this point get() will provide self.copy and not self.map
+        self.tilelock[location].acquire()
         try:
             self.map[location].remove(unit)
         except ValueError:
             pass
-        self.celllock[location].release()
+        self.tilelock[location].release()
+        # From this point we will destroy self.copy if nobody is changing the map
         self.shred()
         
 
@@ -155,7 +166,7 @@ class Fighter:
         self.epoch_last_attack = 0
         self.epoch_last_flush = 0
         self.kill_count = 0
-        self.lock = threading.Lock()
+        self.fighterlock = threading.Lock()
         self.id = id
         self.faction = faction
         self.kind = kind
@@ -174,7 +185,7 @@ class Fighter:
         if not self.alive:
             return
         success = False
-        self.lock.acquire()
+        self.fighterlock.acquire()
 
         try:
             if self.epoch_last_move < epoch and self.alive and self.prev_location != location:
@@ -186,7 +197,7 @@ class Fighter:
                 queue_map_event.put(0)
                 
         finally:
-            self.lock.release()
+            self.fighterlock.release()
         return (success)
 
     def attack(self, target, local_random):
@@ -199,8 +210,8 @@ class Fighter:
                 file=out_file,
                 end="\n")
             return (success)
-        target.lock.acquire()
-        self.lock.acquire()
+        target.fighterlock.acquire()
+        self.fighterlock.acquire()
         try:
             if self.epoch_last_attack < epoch and self.alive and target.alive and distance(
                     self.location, target.location, self.range):
@@ -222,8 +233,8 @@ class Fighter:
                         file=out_file,
                         end="\n")
         finally:
-            self.lock.release()
-            target.lock.release()
+            self.fighterlock.release()
+            target.fighterlock.release()
 
         return (success)
 
