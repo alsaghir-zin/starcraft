@@ -6,6 +6,8 @@ from termcolor import colored
 import sys
 import os
 
+# Dynamic population
+
 # import call method from subprocess module
 from subprocess import call
 
