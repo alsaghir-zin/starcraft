@@ -88,6 +88,23 @@ if FACTION_NUM * FACTION_SIZE > 10:
 
 out_file = open(out_file_name, 'w')
 
+def cvnotify(cv):
+        cv.acquire()
+        cv.notify()
+        cv.release()
+
+def cvwait(cv,timeout=None):
+        cv.acquire()
+        if timeout == None:
+         cv.wait()
+        else:
+         try:
+          cv.wait(timeout=timeout)
+         except Empty:
+          pass
+        cv.release()
+
+
 class Map:
     def __init__(self,size):
         self.maplock = threading.Lock()
@@ -95,7 +112,7 @@ class Map:
         self.copy = []
         self.pending = 0
         self.tilelock = [threading.Lock() for i in range(0, (MAP_SIZE * MAP_SIZE))]
-    
+
     def get(self):
         self.maplock.acquire()
         viewmap=[]
@@ -165,7 +182,7 @@ class Map:
 
 class Fighter:
 
-    def __init__(self, id, kind, faction, location):
+    def __init__(self,threads,army,id, kind, faction, location):
         self.epoch_last_move = 0
         self.epoch_last_attack = 0
         self.epoch_last_flush = 0
@@ -184,8 +201,12 @@ class Fighter:
         self.rounds = 0
         self.location = location
         self.prev_location = self.location
+        army.append(self)
+        self.t = threading.Thread(target=fighter_thread,args=(id,seed,condition_map,))
+        threads.append(self.t)
+        self.t.start()
 
-    def moveto(self, location, condition_map):
+    def moveto(self, location,condition_map):
         if not self.alive:
             return
         success = False
@@ -353,7 +374,7 @@ def print_map():
     
 
 
-def draw_thread(thread_id, condition_map):
+def draw_thread(thread_id,condition_map):
     global low_thread_watermark
     global peace
     local_epoch = 0
@@ -361,17 +382,13 @@ def draw_thread(thread_id, condition_map):
         clear()
         print_map()
         # Wait 0.5 or event
-        try:
-         condition_map.acquire()
-         condition_map.wait(timeout=0.5)
-         condition_map.release()
-        except Empty:
-            pass
+        cvwait(condition_map,timeout=0.5)
+
         
 
 
 # Not perfect but will be more repeatable ( cf seed stuff )
-def clock_thread(thread_id, condition_map):
+def clock_thread(thread_id,condition_map):
     global epoch
     global war
     global low_thread_watermark
@@ -398,12 +415,13 @@ def clock_thread(thread_id, condition_map):
             print(f"{epoch:<4}[Faction {winner}] won the battle",
                   file=out_file,
                   end="\n")
+            cvnotify(condition_map)
         print(file=out_file, end="", flush=True)
 
     print(f"{epoch:<4}[Clock] is leaving", file=out_file, end="\n")
 
 
-def fighter_thread(thread_id, seed, condition_map):
+def fighter_thread(thread_id, seed,condition_map):
     # Local variable specific to each thread.
     global epoch
     global war
@@ -435,9 +453,7 @@ def fighter_thread(thread_id, seed, condition_map):
                 if army[thread_id].epoch_last_attack < epoch and army[
                         target].alive:
                     army[thread_id].attack(army[target], local_random)
-                    condition_map.acquire()
-                    condition_map.notify()
-                    condition_map.release()
+                    cvnotify(condition_map)
         # Check if move possible
         hostiles = possible_attack(army[thread_id].location, thread_id,
                                    army[thread_id].range,
@@ -446,16 +462,15 @@ def fighter_thread(thread_id, seed, condition_map):
             #print("Check for move no hostiles", army[thread_id].name,thread_id, hostiles)
             previouslocation = army[thread_id].location
             location = random_pos(army[thread_id].location, local_random)
-            if army[thread_id].moveto(location, condition_map):
+            if army[thread_id].moveto(location,condition_map):
                 # We update the map
                 battlemap.moveto(previouslocation,location,thread_id)
                 print(
                     f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} {thread_id} , {dposition(army[thread_id].prev_location)} -> {dposition(army[thread_id].location)} ",
                     file=out_file,
                     end="\n")
-                condition_map.acquire()
-                condition_map.notify()
-                condition_map.release()
+                cvnotify(condition_map)
+                
         if army[thread_id].epoch_last_flush < epoch:
             army[thread_id].epoch_last_flush = epoch
             print(file=out_file, end="", flush=True)
@@ -481,17 +496,16 @@ if seed > 0:
     random.seed(seed)  # Global random
 
 # Clock
-t = threading.Thread(target=clock_thread, args=(units, condition_map))
+t = threading.Thread(target=clock_thread, args=(units,condition_map))
 threads.append(t)
 t.start()
 
 
 # Draw thread
-t = threading.Thread(target=clock_thread, args=(units, condition_map))
-t = threading.Thread(target=draw_thread, args=(units + 2, condition_map))
+t = threading.Thread(target=clock_thread, args=(units,condition_map))
+t = threading.Thread(target=draw_thread, args=(units + 2,condition_map))
 threads.append(t)
 t.start()
-
 sleep(2)
 
 for i in range(0, FACTION_NUM):
@@ -502,33 +516,20 @@ for i in range(0, FACTION_NUM):
                                            MAP_SIZE-1)  # Global random
             giveashot -= 1
             if len(possible_attack(candidateposition, units, 1, i, all=True)) == 0:
-                army.append(Fighter(units, random.randint(0, number_of_unit_types - 1), i,
-                        candidateposition))
+                fighter=Fighter(threads,army,units,random.randint(0, number_of_unit_types - 1), i,
+                        candidateposition)
                 battlemap.moveto(candidateposition,candidateposition,units)
-                condition_map.acquire()
-                condition_map.notify()
-                condition_map.release()
+                cvnotify(condition_map)
                 units += 1
-                giveashot=-units
-                
+                giveashot=-units                
         if giveashot == 0:
             print(f"{epoch:<4}[Units {units}] didnt find a place , aborting the battle",file=out_file,end="\n")
             war=False
 
 
 
-# Make all fighters alive
-for i in range(units):
-    t = threading.Thread(target=fighter_thread,
-                         args=(
-                             i,
-                             seed,
-                             condition_map,
-                         ))
-    threads.append(t)
-    t.start()
-
 sleep(0.5)
+peace=False
 start_gun.acquire()
 start_gun.notify_all()
 start_gun.release()
