@@ -1,1 +1,6 @@
-print('            \033[4m'+"Zien"+'\033[0m' + '   no underline')
+import curses
+# ...
+import sys
+
+
+print(curses.LINES, curses.COLS)

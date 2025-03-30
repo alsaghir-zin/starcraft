@@ -313,16 +313,21 @@ def random_pos(position, local_random):
 def print_map():
     global battlemap
     global army
+    buffer=""
+    factionbuffer=""
     allfactions = {}
     i = 0
     j = 0
     map=battlemap.get()
-    print(end="\n\n")
+    #print(end="\n\n")
+    buffer +="\n\n"
     if lines:
-        print(''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'), end="\n")
+        #print(''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'), end="\n")
+        buffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
     for i in range(0, MAP_SIZE):
         if walls:
-            print("|", end="")
+            #print("|", end="")
+            buffer += "|"
         for j in range(0, MAP_SIZE):
             rawbuffer = ",".join("%s%d" %
                                  (unit_types[army[x].kind]["nickname"], x)
@@ -340,23 +345,35 @@ def print_map():
                                   unit_types[army[x].kind]["end"]),
                     faction_color[army[x].faction])
                 for x in map[i * MAP_SIZE + j])
-            print(f"{buffer}{padding}", end="")
+            #print(f"{buffer}{padding}", end="")
+            buffer += f"{buffer}{padding}"
             if walls:
-                print("|", end="")
-        print(end="\n")
+                #print("|", end="")
+                buffer += "|"
+        #print(end="\n")
+        buffer += "\n"
         if lines:
-            print(''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'), end="\n")
+            #print(''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'), end="\n")
+            buffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
     for x in range(FACTION_NUM):
-        print(colored(f"{faction_name[x]:<16}", faction_color[x]), end="")
+        #print(colored(f"{faction_name[x]:<16}", faction_color[x]), end="")
+        factionbuffer +=  colored(f"{faction_name[x]:<16}", faction_color[x])
         for y in army:
             if y.faction == x:
                 print(f"{y.id:<2}", end=" ")
-        print(end=" -- ")
+                factionbuffer += f"{y.id:<2}"
+        #print(end=" -- ")
+        factionbuffer += " -- " + "\n"
         for y in army:
 
             if y.faction == x:
-                print(f"{y.health:<4}", end=" ")
-        print(end="\n")
+                #print(f"{y.health:<4}", end=" ")
+                factionbuffer +=  f"{y.health:<4}"
+        #print(end="\n")
+        factionbuffer += "\n"
+    print(factionbuffer,end="")
+    print(buffer,end="")
+    
 
 
     
