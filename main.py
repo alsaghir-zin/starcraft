@@ -85,16 +85,22 @@ epoch = 0  # Will be updated by the clock
 
 clock_tick = Condition()    # To wake up all thread at the same time
 condition_map = Condition() # To redraw the map ?
+live_map = False
 start_gun = Condition()
-
+prompt="cmd# "
+press="Please press enter to enter commands"
+cliwin = None
 cadence = True           # All fighter will wake up at the same time 
 war = True   # Battle is running
-peace = True # Peace  
+peace = True # Peace
+refreshscreen = True # Stop refreshing  
 cell_size = 6        # Cell size
 cell_height = 3
 surrounding = False  # We do adjacent , not diagonal aka surrounding
 lines = True         # We draw the line
 walls = True         # We draw the cell wall
+
+
 
 mapbuffer = ""
 factionbuffer = ""
@@ -388,25 +394,32 @@ def print_map():
 def maincurses(stdscr):
     global low_thread_watermark
     global peace
+    global cliwin
+    global refreshscreen
     local_epoch = 0
     local_buffer=""
     map=battlemap.get()
     screenh, screenw = stdscr.getmaxyx()
     stdscr.erase()
     print(f"{epoch:<4}[Screen] {screenh}x{screenw}",file=out_file,end="\n")
-    curses.curs_set(0)
     curses.start_color()
     curses.use_default_colors()
     # Define some color pairs (foreground, background)
     for faction,color in enumerate(faction_curses):
          curses.init_pair(faction,color[0],color[1])
-    mapwin = curses.newwin((cell_height)*MAP_SIZE+2,(cell_size + 1)* MAP_SIZE + 1, 0, 0)
-    factionwin = curses.newwin(FACTION_NUM,24+FACTION_SIZE*(3+4),(cell_height)*MAP_SIZE+3,0)
-    factionwin.border()
-    factionwin.addstr(1, 2, "Window 1 - Status", curses.A_BOLD | curses.color_pair(1))
-    factionwin.refresh()
+    mapwinheight=(cell_height)*MAP_SIZE+2
+    factionwinheight=FACTION_NUM
+    cliwinheight=2
+    offseth=0 
+    mapwin = curses.newwin(mapwinheight,(cell_size + 1)* MAP_SIZE + 1, offseth, 0)
+    offseth += mapwinheight
+    factionwin = curses.newwin(factionwinheight,24+FACTION_SIZE*(3+4),offseth,0)
+    offseth += factionwinheight + 1
+    cliwin  = curses.newwin(cliwinheight,64,offseth,0)
+     
 
     while peace or threading.active_count() > low_thread_watermark:
+      if refreshscreen:
         factionwin.clear()
         for x in range(FACTION_NUM):
           factionwin.addstr(x,0,faction_name[x],curses.color_pair(x))
@@ -433,24 +446,42 @@ def maincurses(stdscr):
            mapwin.addstr(i*cell_height+ioffset,j*(cell_size+1)+joffset,local_buffer,unit_curses[army[x].kind]|curses.color_pair(army[x].faction)|curses.A_BOLD) 
            joffset+=len(local_buffer)
         mapwin.addstr(MAP_SIZE*cell_height,0,''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'))
+        mapwin.addstr(MAP_SIZE*cell_height+1,0, f"Clock {epoch:<4}")
         mapwin.refresh()
-        # Wait 0.5 or event
-        #sleep(5)
-        cvwait(condition_map,timeout=1)
-
-
-def draw_thread(thread_id,condition_map):
+        cliwin.move(0,len(press))
+        cliwin.refresh()
+      cvwait(condition_map,timeout=5)
+ 
+def cli_thread(thread_id,condition_map):
     global low_thread_watermark
     global peace
+    global war
+    global cliwin
+    global refreshscreen
     local_epoch = 0
     while peace or threading.active_count() > low_thread_watermark:
-        #clear()
-        #print_map()
-        # Wait 0.5 or event
-        cvwait(condition_map,timeout=0.5)
-   
-        
-
+     if cliwin:
+      cliwin.addstr(0,0,press, curses.A_BOLD | curses.color_pair(1))
+      cliwin.move(0,len(press))
+      cliwin.refresh()
+      input_str = cliwin.getstr(0,len(press), 1)
+      cliwin.addstr(0,0,"Refresh is paused but the battle is still raging", curses.A_BOLD | curses.color_pair(1))
+      cliwin.addstr(1,0,prompt, curses.A_BOLD | curses.color_pair(1))
+      cliwin.refresh()
+      refreshscreen=False
+      input_str = cliwin.getstr(1,len(prompt), 20)  # Max 20 chars
+      cliwin.clear()
+      cliwin.refresh()
+       
+      command=input_str.decode('utf-8') 
+      print(f"{epoch:<4}[Prompt] /{command}/", file=out_file, end="\n") 
+      refreshscreen=True
+      if command == "exit":
+       war=False
+      if command == "r":
+       cvnotify(condition_map) 
+     else:
+      sleep(1)
 
 # Not perfect but will be more repeatable ( cf seed stuff )
 def clock_thread(thread_id,condition_map):
@@ -480,7 +511,8 @@ def clock_thread(thread_id,condition_map):
             print(f"{epoch:<4}[Faction {winner}] wins the battle!",
                   file=out_file,
                   end="\n")
-            cvnotify(condition_map)
+            if live_map: 
+             cvnotify(condition_map)
         print(file=out_file, end="", flush=True)
 
     print(f"{epoch:<4}[Clock] is leaving", file=out_file, end="\n")
@@ -519,7 +551,8 @@ def fighter_thread(thread_id, seed,condition_map):
                 if army[thread_id].epoch_last_attack < epoch and army[target].alive:                     
                     if army[thread_id].attack(army[target], local_random) and not army[target].alive:
                      battlemap.bury(army[target].location,target)
-                     cvnotify(condition_map)
+                     if live_map:
+                      cvnotify(condition_map)
                      #print(f"{epoch:<4}Attack",thread_id,army[thread_id].epoch_last_attack, hostiles,file=out_file,end="\n")
 
          else:
@@ -541,7 +574,8 @@ def fighter_thread(thread_id, seed,condition_map):
                     f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} #{thread_id} move from {dposition(army[thread_id].prev_location)} to {dposition(army[thread_id].location)}",
                     file=out_file,
                     end="\n")
-                cvnotify(condition_map)
+                if live_map:
+                 cvnotify(condition_map)
          else:
           pass
           time.sleep(0.01)
@@ -582,7 +616,7 @@ t.start()
 
 # Draw thread
 t = threading.Thread(target=clock_thread, args=(units,condition_map))
-t = threading.Thread(target=draw_thread, args=(units + 2,condition_map))
+t = threading.Thread(target=cli_thread, args=(units + 2,condition_map))
 threads.append(t)
 t.start()
 sleep(2)
@@ -598,7 +632,8 @@ for i in range(0, FACTION_NUM):
                 fighter=Fighter(threads,army,units,random.randint(0, number_of_unit_types - 1), i,
                         candidateposition)
                 battlemap.moveto(candidateposition,candidateposition,units)
-                cvnotify(condition_map)
+                if live_map:
+                 cvnotify(condition_map)
                 units += 1
                 giveashot=-units                
         if giveashot == 0:
@@ -615,6 +650,7 @@ start_gun.release()
 
 
 curses.wrapper(maincurses)
+
 
     
 # Wait for all threads to complete.
