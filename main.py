@@ -76,7 +76,7 @@ faction_curses = [
 
 FACTION_NUM = 3  # 4  # 2 -> 8
 FACTION_SIZE = 5  # Numbers of warriors in each faction
-MAP_SIZE = 10  # 30 # 5 -> 100
+MAP_SIZE = 16  # 30 # 5 -> 100
 low_thread_watermark = 3  # clock  + draw + main
 out_file_name = "battle_log.txt"
 number_of_unit_types = len(unit_types)
@@ -90,7 +90,7 @@ start_gun = Condition()
 cadence = True           # All fighter will wake up at the same time 
 war = True   # Battle is running
 peace = True # Peace  
-cell_size = 5        # Cell size
+cell_size = 6        # Cell size
 cell_height = 3
 surrounding = False  # We do adjacent , not diagonal aka surrounding
 lines = True         # We draw the line
@@ -119,10 +119,7 @@ def cvwait(cv,timeout=None):
         if timeout == None:
          cv.wait()
         else:
-         try:
-          cv.wait(timeout=timeout)
-         except Empty:
-          pass
+         cv.wait(timeout=timeout)
         cv.release()
 
 
@@ -394,31 +391,52 @@ def maincurses(stdscr):
     local_epoch = 0
     local_buffer=""
     map=battlemap.get()
-    while peace or threading.active_count() > low_thread_watermark:
-        stdscr.erase()
-        curses.curs_set(0)
-        curses.start_color()
-        curses.use_default_colors()
-        # Define some color pairs (foreground, background)
-        for faction,color in enumerate(faction_curses): 
+    screenh, screenw = stdscr.getmaxyx()
+    stdscr.erase()
+    print(f"{epoch:<4}[Screen] {screenh}x{screenw}",file=out_file,end="\n")
+    curses.curs_set(0)
+    curses.start_color()
+    curses.use_default_colors()
+    # Define some color pairs (foreground, background)
+    for faction,color in enumerate(faction_curses):
          curses.init_pair(faction,color[0],color[1])
+    mapwin = curses.newwin((cell_height)*MAP_SIZE+2,(cell_size + 1)* MAP_SIZE + 1, 0, 0)
+    factionwin = curses.newwin(FACTION_NUM,24+FACTION_SIZE*(3+4),(cell_height)*MAP_SIZE+3,0)
+    factionwin.border()
+    factionwin.addstr(1, 2, "Window 1 - Status", curses.A_BOLD | curses.color_pair(1))
+    factionwin.refresh()
+
+    while peace or threading.active_count() > low_thread_watermark:
+        factionwin.clear()
+        for x in range(FACTION_NUM):
+          factionwin.addstr(x,0,faction_name[x],curses.color_pair(x))
+          factionwin.addstr(x,16," ")
+          for y in army:
+            if y.faction == x:
+                factionwin.addstr(f"{y.id:<3}")
+          factionwin.addstr(" / ")
+          for y in army:
+            if y.faction == x:
+                factionwin.addstr(f"{y.health:<4}")
+          factionwin.refresh()
+        mapwin.clear()
         for i in range(0, MAP_SIZE):
-         stdscr.addstr(i*cell_height,0,''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'))
+         mapwin.addstr(i*cell_height,0,''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'))
          ioffset=1
          for j in range(0, MAP_SIZE+1):
           for h in range(cell_height):
-           stdscr.addstr(i*cell_height+h+1,j*(cell_size+1),'|') 
+           mapwin.addstr(i*cell_height+h+1,j*(cell_size+1),'|')
          for j in range(0, MAP_SIZE):
           joffset=1
           for x in map[i * MAP_SIZE + j]:
            local_buffer=f"{x}"
-           stdscr.addstr(i*cell_height+ioffset,j*(cell_size+1)+joffset,local_buffer,unit_curses[army[x].kind]|curses.color_pair(army[x].faction)|curses.A_BOLD) 
+           mapwin.addstr(i*cell_height+ioffset,j*(cell_size+1)+joffset,local_buffer,unit_curses[army[x].kind]|curses.color_pair(army[x].faction)|curses.A_BOLD) 
            joffset+=len(local_buffer)
-        stdscr.addstr(MAP_SIZE*cell_height,0,''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'))
-        stdscr.addstr(MAP_SIZE*cell_height+1,0,f"Epoch {epoch}")
-        stdscr.refresh()
+        mapwin.addstr(MAP_SIZE*cell_height,0,''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'))
+        mapwin.refresh()
         # Wait 0.5 or event
-        cvwait(condition_map,timeout=0.5)
+        #sleep(5)
+        cvwait(condition_map,timeout=1)
 
 
 def draw_thread(thread_id,condition_map):
