@@ -313,21 +313,21 @@ def random_pos(position, local_random):
 def print_map():
     global battlemap
     global army
-    buffer=""
+    mapbuffer=""
     factionbuffer=""
     allfactions = {}
     i = 0
     j = 0
     map=battlemap.get()
     #print(end="\n\n")
-    buffer +="\n\n"
+    mapbuffer +="\n\n"
     if lines:
         #print(''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'), end="\n")
-        buffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
+        mapbuffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
     for i in range(0, MAP_SIZE):
         if walls:
             #print("|", end="")
-            buffer += "|"
+            mapbuffer += "|"
         for j in range(0, MAP_SIZE):
             rawbuffer = ",".join("%s%d" %
                                  (unit_types[army[x].kind]["nickname"], x)
@@ -346,15 +346,15 @@ def print_map():
                     faction_color[army[x].faction])
                 for x in map[i * MAP_SIZE + j])
             #print(f"{buffer}{padding}", end="")
-            buffer += f"{buffer}{padding}"
+            mapbuffer += f"{buffer}{padding}"
             if walls:
                 #print("|", end="")
-                buffer += "|"
+                mapbuffer += "|"
         #print(end="\n")
-        buffer += "\n"
+        mapbuffer += "\n"
         if lines:
             #print(''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'), end="\n")
-            buffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
+            mapbuffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
     for x in range(FACTION_NUM):
         #print(colored(f"{faction_name[x]:<16}", faction_color[x]), end="")
         factionbuffer +=  colored(f"{faction_name[x]:<16}", faction_color[x])
