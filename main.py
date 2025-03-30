@@ -372,7 +372,7 @@ def print_map():
         #print(end="\n")
         factionbuffer += "\n"
     print(factionbuffer,end="")
-    print(buffer,end="")
+    print(mapbuffer,end="")
     
 
 
