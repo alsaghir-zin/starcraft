@@ -320,7 +320,8 @@ def print_map():
     j = 0
     map=battlemap.get()
     #print(end="\n\n")
-    mapbuffer +="\n\n"
+    mapbuffer +="\n"
+    factionbuffer += "\n" 
     if lines:
         #print(''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'), end="\n")
         mapbuffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
@@ -360,10 +361,10 @@ def print_map():
         factionbuffer +=  colored(f"{faction_name[x]:<16}", faction_color[x])
         for y in army:
             if y.faction == x:
-                print(f"{y.id:<2}", end=" ")
-                factionbuffer += f"{y.id:<2}"
+                #print(f"{y.id:<2}", end=" ")
+                factionbuffer += f"{y.id:<3}"
         #print(end=" -- ")
-        factionbuffer += " -- " + "\n"
+        factionbuffer += " -- " 
         for y in army:
 
             if y.faction == x:
@@ -371,8 +372,8 @@ def print_map():
                 factionbuffer +=  f"{y.health:<4}"
         #print(end="\n")
         factionbuffer += "\n"
-    print(factionbuffer,end="")
     print(mapbuffer,end="")
+    print(factionbuffer,end="")
     
 
 
