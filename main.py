@@ -82,10 +82,11 @@ out_file_name = "battle_log.txt"
 number_of_unit_types = len(unit_types)
 seed = 4   # Seed for main thread
 epoch = 0  # Will be updated by the clock
-
+map_refresh_rate = 5 # 5 sec as per spec
 clock_tick = Condition()    # To wake up all thread at the same time
 condition_map = Condition() # To redraw the map ?
 live_map = False
+faction_status = False
 start_gun = Condition()
 prompt="cmd# "
 press="Please press enter to enter commands"
@@ -390,12 +391,12 @@ def print_map():
     
 
 
-# TOTO/toto    
 def maincurses(stdscr):
     global low_thread_watermark
     global peace
     global cliwin
     global refreshscreen
+    global faction_status
     local_epoch = 0
     local_buffer=""
     map=battlemap.get()
@@ -418,19 +419,24 @@ def maincurses(stdscr):
     cliwin  = curses.newwin(cliwinheight,64,offseth,0)
      
 
-    while peace or threading.active_count() > low_thread_watermark:
+    while peace or ( war and threading.active_count() > low_thread_watermark ):  
       if refreshscreen:
         factionwin.clear()
         for x in range(FACTION_NUM):
           factionwin.addstr(x,0,faction_name[x],curses.color_pair(x))
           factionwin.addstr(x,16," ")
-          for y in army:
+          if faction_status: 
+           for y in army:
             if y.faction == x:
-                factionwin.addstr(f"{y.id:<3}")
-          factionwin.addstr(" / ")
-          for y in army:
-            if y.faction == x:
+                if y.alive:
+                 factionwin.addstr(f"{y.id:<3}",curses.A_BOLD)
+                else:
+                 factionwin.addstr(f"{y.id:<3}",curses.A_BLINK)
+           factionwin.addstr(" / ")
+           for y in army:
+             if y.faction == x:
                 factionwin.addstr(f"{y.health:<4}")
+ 
           factionwin.refresh()
         mapwin.clear()
         for i in range(0, MAP_SIZE):
@@ -450,7 +456,9 @@ def maincurses(stdscr):
         mapwin.refresh()
         cliwin.move(0,len(press))
         cliwin.refresh()
-      cvwait(condition_map,timeout=5)
+      # Wait 5 sec or a refresh ...
+      cvwait(condition_map,timeout=map_refresh_rate)
+    stdscr.erase()
  
 def cli_thread(thread_id,condition_map):
     global low_thread_watermark
@@ -458,6 +466,7 @@ def cli_thread(thread_id,condition_map):
     global war
     global cliwin
     global refreshscreen
+    global faction_status
     local_epoch = 0
     while peace or threading.active_count() > low_thread_watermark:
      if cliwin:
@@ -466,7 +475,7 @@ def cli_thread(thread_id,condition_map):
       cliwin.refresh()
       input_str = cliwin.getstr(0,len(press), 1)
       cliwin.addstr(0,0,"Refresh is paused but the battle is still raging", curses.A_BOLD | curses.color_pair(1))
-      cliwin.addstr(1,0,prompt, curses.A_BOLD | curses.color_pair(1))
+      cliwin.addstr(1,0,prompt, curses.A_BOLD|curses.A_BLINK | curses.color_pair(1))
       cliwin.refresh()
       refreshscreen=False
       input_str = cliwin.getstr(1,len(prompt), 20)  # Max 20 chars
@@ -477,9 +486,19 @@ def cli_thread(thread_id,condition_map):
       print(f"{epoch:<4}[Prompt] /{command}/", file=out_file, end="\n") 
       refreshscreen=True
       if command == "exit":
+       cliwin.clear()
+       cliwin.refresh()
        war=False
+       cvnotify(condition_map)   
       if command == "r":
-       cvnotify(condition_map) 
+       cvnotify(condition_map)
+      if command == "status":
+       if faction_status:
+        faction_status=False
+        cvnotify(condition_map)
+       else:
+        faction_status=True 
+        cvnotify(condition_map)
      else:
       sleep(1)
 
