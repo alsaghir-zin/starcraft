@@ -8,6 +8,7 @@ from termcolor import colored
 import sys
 import os
 import curses
+import re
 
 # Dynamic population
 
@@ -22,7 +23,6 @@ from time import sleep
 def clear():
     # check and make call for specific operating system
     _ = call('clear' if os.name == 'posix' else 'cls')
-
 
 unit_types = [
     {
@@ -71,7 +71,6 @@ faction_curses = [
 ]
 
 
-
 # Global variable shared by all threads.
 
 FACTION_NUM = 8  # 4  # 2 -> 8
@@ -105,6 +104,8 @@ walls = True         # We draw the cell wall
 
 mapbuffer = ""
 factionbuffer = ""
+kind2id={}
+overflow=False
 
 if MAP_SIZE >= 24:
     cell_size = 1
@@ -116,6 +117,10 @@ if MAP_SIZE >= 24:
 #    cell_size = 2
 
 out_file = open(out_file_name, 'w')
+
+for id,type in enumerate(unit_types):
+  kind2id[type["name"].lower()]=id
+
 
 def cvnotify(cv):
         cv.acquire()
@@ -409,7 +414,6 @@ def maincurses(stdscr):
     curses.use_default_colors()
     # Define some color pairs (foreground, background)
     for faction,color in enumerate(faction_curses):
-         print(f"{epoch:<4}[Color] {faction}",file=out_file,end="\n")  
          curses.init_pair(faction,color[0],color[1])
     mapwinheight=(cell_height+1)*MAP_SIZE+2
     factionwinheight=FACTION_NUM
@@ -434,17 +438,23 @@ def maincurses(stdscr):
           factionwin.addstr(x,0,faction_name[x],curses.color_pair(x))
           factionwin.addstr(x,16," ")
           if faction_status: 
+           max=0
            for y in army:
             if y.faction == x:
                 if y.alive:
-                 factionwin.addstr(f"{y.id:<3}",curses.A_BOLD)
+                 max +=1
+                 if not overflow:
+                   factionwin.addstr(f"{y.id:<3}",curses.A_BOLD)
                 else:
-                 factionwin.addstr(f"{y.id:<3}",curses.A_DIM)
-           factionwin.addstr(" / ")
-           for y in army:
-             if y.faction == x:
+                 if not overflow:
+                   factionwin.addstr(f"{y.id:<3}",curses.A_DIM)
+           if not overflow:
+             factionwin.addstr(" / ")
+             for y in army:
+              if y.faction == x:
                 factionwin.addstr(f"{y.health:<4}")
- 
+           if overflow:
+             factionwin.addstr(f"Size {max:<3}",curses.A_BOLD) 
           factionwin.refresh()
         mapwin.clear()
         for i in range(0, MAP_SIZE):
@@ -475,6 +485,7 @@ def cli_thread(thread_id,condition_map):
     global cliwin
     global refreshscreen
     global faction_status
+    global overflow
     local_epoch = 0
     while peace or threading.active_count() > low_thread_watermark:
      if cliwin:
@@ -507,6 +518,26 @@ def cli_thread(thread_id,condition_map):
        else:
         faction_status=True 
         cvnotify(condition_map)
+      answer=re.findall(r'spawn\s+(\d+)\s+(\d+)\s+(melee|ranged)',command )
+      if len(answer):
+         print(f"{epoch:<4}[Spawn] parameters {answer}",file=out_file,end="\n") 
+         localfaction=int(answer[0][1])
+         localpopulation=int(answer[0][0])
+         localkindtext=answer[0][2].lower()
+         if localkindtext in kind2id:
+          kind=kind2id[localkindtext] 
+          if localfaction >= 0 and localfaction < FACTION_NUM :
+           while localpopulation > 0:
+            overflow=True
+            spawn(localfaction,kind)
+            print(f"{epoch:<4}[Spawn] birth in faction {localfaction} kind {kind}",file=out_file,end="\n")
+            localpopulation -= 1 
+          else:
+           print(f"{epoch:<4}[Spawn] faction {localfaction} is unkown",file=out_file,end="\n")
+         else:
+          print(f"{epoch:<4}[Spawn] type {localkindtext} is unkown",file=out_file,end="\n")  
+              
+        
      else:
       sleep(1)
 
@@ -625,7 +656,29 @@ def fighter_thread(thread_id, seed,condition_map):
     if army[thread_id].alive:
             print(f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} #{thread_id} {dposition(army[thread_id].location)} going back home with {army[thread_id].kill_count} victory(ies)",file=out_file,end="\n")
 
+def spawn(faction,kind):
+ global units
+ global threads
+ global army
+ global battlemap
+ global live_map
+ global condition_map
+ if True:
+        giveashot=10000
+        while giveashot > 0:
+            candidateposition = random.randint(0, MAP_SIZE *
+                                           MAP_SIZE-1)  # Global random
+            giveashot -= 1
+            if len(possible_attack(candidateposition, units, 1, faction, all=True)) == 0:
+                fighter=Fighter(threads,army,units,kind, faction,
+                        candidateposition)
+                battlemap.moveto(candidateposition,candidateposition,units)
+                if live_map:
+                 cvnotify(condition_map)
+                units += 1
+                giveashot=-units
 
+ 
 # Create a list to hold our thread objects.
 
 battlemap=Map(MAP_SIZE)
@@ -648,22 +701,10 @@ threads.append(t)
 t.start()
 sleep(2)
 
-for i in range(0, FACTION_NUM):
+for faction in range(0, FACTION_NUM):
     for j in range(0, FACTION_SIZE):
-        giveashot=10000
-        while giveashot > 0:
-            candidateposition = random.randint(0, MAP_SIZE *
-                                           MAP_SIZE-1)  # Global random
-            giveashot -= 1
-            if len(possible_attack(candidateposition, units, 1, i, all=True)) == 0:
-                fighter=Fighter(threads,army,units,random.randint(0, number_of_unit_types - 1), i,
-                        candidateposition)
-                battlemap.moveto(candidateposition,candidateposition,units)
-                if live_map:
-                 cvnotify(condition_map)
-                units += 1
-                giveashot=-units                
-        if giveashot == 0:
+        kind=random.randint(0, number_of_unit_types - 1)
+        if spawn(faction,kind) == 0:
             print(f"{epoch:<4}[Units {units}] didnt find a place , aborting the battle",file=out_file,end="\n")
             war=False
 
