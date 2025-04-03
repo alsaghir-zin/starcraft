@@ -60,21 +60,21 @@ faction_color = [
 ]
 
 faction_curses = [
-    [curses.COLOR_RED,		curses.COLOR_BLACK],
+    [curses.COLOR_WHITE,        curses.COLOR_BLACK],
     [curses.COLOR_GREEN, 	curses.COLOR_BLACK],
     [curses.COLOR_BLUE, 	curses.COLOR_BLACK],
-    [curses.COLOR_YELLOW, 	curses.COLOR_BLACK],
     [curses.COLOR_MAGENTA,	curses.COLOR_BLACK],
     [curses.COLOR_CYAN,		curses.COLOR_BLACK],
-    [curses.COLOR_WHITE,	curses.COLOR_BLACK],
     [curses.COLOR_RED,		curses.COLOR_BLACK],
+    [curses.COLOR_BLUE, 	curses.COLOR_GREEN],
+    [curses.COLOR_RED,		curses.COLOR_BLUE],
 ]
 
 
 
 # Global variable shared by all threads.
 
-FACTION_NUM = 3  # 4  # 2 -> 8
+FACTION_NUM = 8  # 4  # 2 -> 8
 FACTION_SIZE = 5  # Numbers of warriors in each faction
 MAP_SIZE = 16  # 30 # 5 -> 100
 low_thread_watermark = 3  # clock  + draw + main
@@ -95,8 +95,8 @@ cadence = True           # All fighter will wake up at the same time
 war = True   # Battle is running
 peace = True # Peace
 refreshscreen = True # Stop refreshing  
-cell_size = 6        # Cell size
-cell_height = 3
+cell_size = 5        # Cell size
+cell_height = 2 
 surrounding = False  # We do adjacent , not diagonal aka surrounding
 lines = True         # We draw the line
 walls = True         # We draw the cell wall
@@ -106,8 +106,9 @@ walls = True         # We draw the cell wall
 mapbuffer = ""
 factionbuffer = ""
 
-#if MAP_SIZE > 24:
-#    cell_size = 1
+if MAP_SIZE >= 24:
+    cell_size = 1
+    cell_height = 1
 #if MAP_SIZE > 24:
 #    lines = False
 #    walls = False
@@ -262,6 +263,7 @@ class Fighter:
                 self.epoch_last_attack = epoch
                 success = True
                 if target.health <= 0:
+                    target.health = 0
                     target.alive = False
                     self.kill_count += 1
                     print(
@@ -348,7 +350,7 @@ def print_map():
     factionbuffer=""
     map=battlemap.get()
     if lines:
-        mapbuffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
+        mapbuffer += ''.ljust((cell_size + 2) * MAP_SIZE + 1, '-') + "\n"
     for i in range(0, MAP_SIZE):
         if walls:
             mapbuffer += "|"
@@ -356,7 +358,7 @@ def print_map():
             rawbuffer = ",".join("%s%d" %
                                  (unit_types[army[x].kind]["nickname"], x)
                                  for x in map[i * MAP_SIZE + j])
-            lpadding = cell_size - len(rawbuffer)
+            lpadding = cell_size+1 - len(rawbuffer)
             if lpadding <= 0:
                 lpadding = 0
                 padding = ""
@@ -375,7 +377,7 @@ def print_map():
         #print(end="\n")
         mapbuffer += "\n"
         if lines:
-            mapbuffer += ''.ljust((cell_size + 1) * MAP_SIZE + 1, '-') + "\n"
+            mapbuffer += ''.ljust((cell_size + 2) * MAP_SIZE + 1, '-') + "\n"
     for x in range(FACTION_NUM):
         #print(colored(f"{faction_name[x]:<16}", faction_color[x]), end="")
         factionbuffer +=  colored(f"{faction_name[x]:<16}", faction_color[x])
@@ -407,16 +409,22 @@ def maincurses(stdscr):
     curses.use_default_colors()
     # Define some color pairs (foreground, background)
     for faction,color in enumerate(faction_curses):
+         print(f"{epoch:<4}[Color] {faction}",file=out_file,end="\n")  
          curses.init_pair(faction,color[0],color[1])
-    mapwinheight=(cell_height)*MAP_SIZE+2
+    mapwinheight=(cell_height+1)*MAP_SIZE+2
     factionwinheight=FACTION_NUM
     cliwinheight=2
-    offseth=0 
-    mapwin = curses.newwin(mapwinheight,(cell_size + 1)* MAP_SIZE + 1, offseth, 0)
-    offseth += mapwinheight
-    factionwin = curses.newwin(factionwinheight,24+FACTION_SIZE*(3+4),offseth,0)
+    offseth=0
+    offsetw=0 
+    mapwin = curses.newwin(mapwinheight,(cell_size + 2)* MAP_SIZE + 1, offseth, 0)
+    if mapwinheight >= screenh-factionwinheight-cliwinheight:
+     offsetw=(cell_size + 2)* MAP_SIZE + 1 + 2
+     
+    else:
+     offseth += mapwinheight
+    factionwin = curses.newwin(factionwinheight,24+FACTION_SIZE*(3+4),offseth,offsetw)
     offseth += factionwinheight + 1
-    cliwin  = curses.newwin(cliwinheight,64,offseth,0)
+    cliwin  = curses.newwin(cliwinheight,64,offseth,offsetw)
      
 
     while peace or ( war and threading.active_count() > low_thread_watermark ):  
@@ -431,7 +439,7 @@ def maincurses(stdscr):
                 if y.alive:
                  factionwin.addstr(f"{y.id:<3}",curses.A_BOLD)
                 else:
-                 factionwin.addstr(f"{y.id:<3}",curses.A_BLINK)
+                 factionwin.addstr(f"{y.id:<3}",curses.A_DIM)
            factionwin.addstr(" / ")
            for y in army:
              if y.faction == x:
@@ -440,19 +448,19 @@ def maincurses(stdscr):
           factionwin.refresh()
         mapwin.clear()
         for i in range(0, MAP_SIZE):
-         mapwin.addstr(i*cell_height,0,''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'))
+         mapwin.addstr(i*(cell_height+1),0,''.ljust((cell_size + 2) * MAP_SIZE + 1, '-'))
          ioffset=1
          for j in range(0, MAP_SIZE+1):
-          for h in range(cell_height):
-           mapwin.addstr(i*cell_height+h+1,j*(cell_size+1),'|')
+          for h in range(cell_height+1):
+           mapwin.addstr(i*(cell_height+1)+h+1,j*(cell_size+2),'|')
          for j in range(0, MAP_SIZE):
           joffset=1
           for x in map[i * MAP_SIZE + j]:
            local_buffer=f"{x}"
-           mapwin.addstr(i*cell_height+ioffset,j*(cell_size+1)+joffset,local_buffer,unit_curses[army[x].kind]|curses.color_pair(army[x].faction)|curses.A_BOLD) 
+           mapwin.addstr(i*(cell_height+1)+ioffset,j*(cell_size+2)+joffset,local_buffer,unit_curses[army[x].kind]|curses.color_pair(army[x].faction)|curses.A_BOLD) 
            joffset+=len(local_buffer)
-        mapwin.addstr(MAP_SIZE*cell_height,0,''.ljust((cell_size + 1) * MAP_SIZE + 1, '-'))
-        mapwin.addstr(MAP_SIZE*cell_height+1,0, f"Clock {epoch:<4}")
+        mapwin.addstr(MAP_SIZE*(cell_height+1),0,''.ljust((cell_size + 2) * MAP_SIZE + 1, '-'))
+        mapwin.addstr(MAP_SIZE*(cell_height+1)+1,0, f"Clock {epoch:<4}")
         mapwin.refresh()
         cliwin.move(0,len(press))
         cliwin.refresh()
