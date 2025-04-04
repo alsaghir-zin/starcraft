@@ -29,7 +29,7 @@ git pull
 ./sc.py
 ``` 
 
-! Trick 
+# Trick 
 if terminal is garbled :
 ```
 stty sane  ^j
