@@ -20,4 +20,6 @@ cd ./starcraft
 git pull
 ./sc.py
 
- 
+! Trick 
+if terminal is garbled :
+stty sane  ^j 
