@@ -236,7 +236,7 @@ class Fighter:
         threads.append(self.t)
         self.t.start()
 
-    def moveto(self, location,condition_map):
+    def walk(self, location,condition_map):
         if not self.alive:
             return
         success = False
@@ -625,7 +625,7 @@ def fighter_thread(thread_id, seed,condition_map):
             #print("Check for move no hostiles", army[thread_id].name,thread_id, hostiles)
             previouslocation = army[thread_id].location
             location = random_pos(army[thread_id].location, local_random)
-            if army[thread_id].moveto(location,condition_map):
+            if army[thread_id].walk(location,condition_map):
                 # We update the map
                 battlemap.moveto(previouslocation,location,thread_id)
                 print(
@@ -672,7 +672,7 @@ def spawn(faction,kind):
             if len(possible_attack(candidateposition, units, 1, faction, all=True)) == 0:
                 fighter=Fighter(threads,army,units,kind, faction,
                         candidateposition)
-                battlemap.moveto(candidateposition,candidateposition,units)
+                battlemap.walk(candidateposition,candidateposition,units)
                 if live_map:
                  cvnotify(condition_map)
                 units += 1
