@@ -1,19 +1,20 @@
-! on windows
+# on windows
 install wsl
 
 
 
-! on github
+# on github
 github profile picture -> Settings -> Developper Settings -> Personnal Access Token -> Token (classic) -> Generate New Token (Classic)
 Note : WSL
 project
 
-! on ubuntu or wsl
-# Copy past token from gihub
+# on ubuntu or wsl
+Copy past token from gihub
 
 ```
 read -s TOKEN
 ```
+
 
 ```
 sudo apt-get install python3-termcolor

@@ -480,6 +480,7 @@ def maincurses(stdscr):
       # Wait 5 sec or a refresh ...
       cvwait(condition_map,timeout=map_refresh_rate)
     stdscr.erase()
+
  
 def cli_thread(thread_id,condition_map):
     global low_thread_watermark
@@ -733,3 +734,5 @@ curses.wrapper(maincurses)
 # Wait for all threads to complete.
 for t in threads:
     t.join()
+
+
