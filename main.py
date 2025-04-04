@@ -73,9 +73,9 @@ faction_curses = [
 
 # Global variable shared by all threads.
 
-FACTION_NUM = 8  # 4  # 2 -> 8
+FACTION_NUM = 2  # 4  # 2 -> 8
 FACTION_SIZE = 5  # Numbers of warriors in each faction
-MAP_SIZE = 16  # 30 # 5 -> 100
+MAP_SIZE = 6  # 30 # 5 -> 100
 low_thread_watermark = 3  # clock  + draw + main
 out_file_name = "battle_log.txt"
 number_of_unit_types = len(unit_types)
@@ -470,7 +470,10 @@ def maincurses(stdscr):
            mapwin.addstr(i*(cell_height+1)+ioffset,j*(cell_size+2)+joffset,local_buffer,unit_curses[army[x].kind]|curses.color_pair(army[x].faction)|curses.A_BOLD) 
            joffset+=len(local_buffer)
         mapwin.addstr(MAP_SIZE*(cell_height+1),0,''.ljust((cell_size + 2) * MAP_SIZE + 1, '-'))
-        mapwin.addstr(MAP_SIZE*(cell_height+1)+1,0, f"Clock {epoch:<4}")
+        if mapwinheight >= screenh-factionwinheight-cliwinheight:
+         mapwin.addstr(MAP_SIZE*(cell_height+1),MAP_SIZE//3, f"Clock {epoch:<4}")
+        else:
+         mapwin.addstr(MAP_SIZE*(cell_height+1)+1,0, f"Clock {epoch:<4}")
         mapwin.refresh()
         cliwin.move(0,len(press))
         cliwin.refresh()
@@ -486,6 +489,7 @@ def cli_thread(thread_id,condition_map):
     global refreshscreen
     global faction_status
     global overflow
+    global live_map
     local_epoch = 0
     while peace or threading.active_count() > low_thread_watermark:
      if cliwin:
@@ -509,9 +513,11 @@ def cli_thread(thread_id,condition_map):
        cliwin.refresh()
        war=False
        cvnotify(condition_map)   
-      if command == "r":
+      if command.lower in  ("r","refresh"):
        cvnotify(condition_map)
-      if command == "status":
+      if command.lower() in ( "l" ,"live"):
+       live_map=True
+      if command.lower() in ("s","status"):
        if faction_status:
         faction_status=False
         cvnotify(condition_map)
@@ -580,9 +586,13 @@ def fighter_thread(thread_id, seed,condition_map):
     # Local variable specific to each thread.
     global epoch
     global war
-    local_random = random.Random()
+    local_random_t = random.Random()
+    local_random_m = random.Random()
+    local_random_d = random.Random()
     if seed > 0:
-        local_random.seed(seed + thread_id)
+        local_random_t.seed(seed + 1024 + thread_id) # Random for target 
+        local_random_m.seed(seed + 2048 + thread_id) # Random for move
+        local_random_d.seed(seed + 2048 + thread_id) # Random for dammage 
     global battlemap
     global army
     start_gun.acquire()
@@ -605,9 +615,9 @@ def fighter_thread(thread_id, seed,condition_map):
                                    army[thread_id].faction)
         
          if army[thread_id].epoch_last_attack < epoch and len(hostiles):
-            for target in local_random.sample(hostiles, len(hostiles)):
+            for target in local_random_t.sample(hostiles, len(hostiles)):
                 if army[thread_id].epoch_last_attack < epoch and army[target].alive:                     
-                    if army[thread_id].attack(army[target], local_random) and not army[target].alive:
+                    if army[thread_id].attack(army[target], local_random_d) and not army[target].alive:
                      battlemap.bury(army[target].location,target)
                      if live_map:
                       cvnotify(condition_map)
@@ -624,7 +634,7 @@ def fighter_thread(thread_id, seed,condition_map):
          if army[thread_id].epoch_last_move < epoch and len(hostiles) == 0:
             #print("Check for move no hostiles", army[thread_id].name,thread_id, hostiles)
             previouslocation = army[thread_id].location
-            location = random_pos(army[thread_id].location, local_random)
+            location = random_pos(army[thread_id].location, local_random_m)
             if army[thread_id].walk(location,condition_map):
                 # We update the map
                 battlemap.moveto(previouslocation,location,thread_id)
@@ -666,13 +676,12 @@ def spawn(faction,kind):
  if True:
         giveashot=10000
         while giveashot > 0:
-            candidateposition = random.randint(0, MAP_SIZE *
-                                           MAP_SIZE-1)  # Global random
+            candidateposition = random.randint(0, MAP_SIZE * MAP_SIZE-1)  # Global random
             giveashot -= 1
             if len(possible_attack(candidateposition, units, 1, faction, all=True)) == 0:
                 fighter=Fighter(threads,army,units,kind, faction,
                         candidateposition)
-                battlemap.walk(candidateposition,candidateposition,units)
+                battlemap.moveto(candidateposition,candidateposition,units)
                 if live_map:
                  cvnotify(condition_map)
                 units += 1
