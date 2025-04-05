@@ -1,6 +1,6 @@
 # on windows
 install wsl
-
+run "wsl"
 
 
 # on github
