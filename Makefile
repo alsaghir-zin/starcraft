@@ -7,6 +7,6 @@ pull:
 run: pull
 	./sc.py
 push:
-	git add .
-	git commit -m "NA"
-	git push
+	-git add .
+	-git commit -m "NA"
+	-git push
