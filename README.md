@@ -38,8 +38,6 @@ git push
 ```
 
 
-
-
 Pull the project
 ```
 {
@@ -50,12 +48,18 @@ git pull ;
 Run the project
 ```
 {
+# See Makefile
 # make
 git pull ;
 ./sc.py ;
-git push ;
 }
-``` 
+```
+Push battle_log.txt
+{
+# See Makefile
+make push
+}
+ 
 Install missing packages , could be via pip or package manager 
 ```
 # You may to install some packages
