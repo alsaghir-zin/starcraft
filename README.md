@@ -38,11 +38,15 @@ Install missing packages , could be via pip or package manager
 ```
 # You may to install some packages
 # Here on ubuntu
+
+# apt list |grep python | grep term
+# apt list --installed | grep term
+# python3 -m pip install --upgrade termcolor
+{
 sudo apt-get update
-apt list |grep python | grep term
-apt list --installed | grep term
-python3 -m pip install --upgrade termcolor
 sudo apt-get install python3-termcolor
+sudo apt-get install make
+}
 ```
 
 # Trick 
