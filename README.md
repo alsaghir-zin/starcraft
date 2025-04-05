@@ -23,15 +23,15 @@ git clone https://token:$TOKEN@github.com/alsaghir-zin/starcraft.git
 Pull the project
 ```
 {
-cd ./starcraft
-git pull
+cd ./starcraft ;
+git pull ;
 }
 ```
 Run the project
 ```
 {
-git pull
-./sc.py
+git pull ;
+./sc.py ;
 }
 ``` 
 Install missing packages , could be via pip or package manager 
