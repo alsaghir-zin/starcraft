@@ -53,6 +53,7 @@ Run the project
 # make
 git pull ;
 ./sc.py ;
+git push ;
 }
 ``` 
 Install missing packages , could be via pip or package manager 
