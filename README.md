@@ -11,24 +11,35 @@ project
 
 # Run on a Linux system or wsl
 Copy past token from gihub
-
 ```
 read -s TOKEN
 ```
 
-
+Clone the project
 ```
-sudo apt-get install python3-termcolor
 git clone https://token:$TOKEN@github.com/alsaghir-zin/starcraft.git
 ```
 
+Pull the project
 ```
+{
 cd ./starcraft
 git pull
+}
 ```
-``` 
+Run the project
+```
+{
+git pull
 ./sc.py
+}
 ``` 
+Install missing packages , could be via pip or package manager 
+```
+# You may to install some packages
+# Here on ubuntu
+sudo apt-get install python3-termcolor
+```
 
 # Trick 
 if terminal is garbled :
