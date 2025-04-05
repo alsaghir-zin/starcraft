@@ -6,8 +6,9 @@ run "wsl"
 # Get Token on github
 Your profile picture in on the top right position of the project page
 github profile picture -> Settings -> Developper Settings -> Personnal Access Token -> Token (classic) -> Generate New Token (Classic)
-Note : WSL
-project
+- Note : WSL
+- repo
+- project 
 
 # Run on a Linux system or wsl
 Copy past token from gihub
