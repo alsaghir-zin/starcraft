@@ -38,6 +38,7 @@ Install missing packages , could be via pip or package manager
 ```
 # You may to install some packages
 # Here on ubuntu
+apt list |grep python | grep term
 apt list --installed | grep term
 sudo apt-get install python3-termcolor
 ```
