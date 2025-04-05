@@ -12,7 +12,7 @@ project
 # Run on a Linux system or wsl
 Copy past token from gihub
 ```
-read -s TOKEN
+read -p "Paste the TOKEN and press enter : " -s TOKEN
 ```
 
 Clone the project
