@@ -21,15 +21,18 @@ Clone the project
 git clone https://token:$TOKEN@github.com/alsaghir-zin/starcraft.git
 ```
 
-Or update the project for a new token
+Update the project
 ```
 {
 cd starcraft
 git remote remove origin
 git remote add origin https://token:$TOKEN@github.com/alsaghir-zin/starcraft.git
-git push --set-upstream origin main
+#git push --set-upstream origin main
+git fetch
+git branch --set-upstream-to=origin/main main
 git config --local user.email "zeinsagher@gmail.com"
 git config --local user.name "alsaghir-zin"
+git pull
 git push
 }
 ```
