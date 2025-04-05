@@ -30,6 +30,7 @@ git pull ;
 Run the project
 ```
 {
+# make
 git pull ;
 ./sc.py ;
 }
@@ -56,6 +57,7 @@ stty sane  ^j
 ```
 
 or 
+
 ```
 reset
 ```
