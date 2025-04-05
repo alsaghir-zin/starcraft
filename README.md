@@ -1,14 +1,14 @@
-# on windows
+# Wsl on windows
 install wsl
 run "wsl"
 
 
-# on github
+# Get Token on github
 github profile picture -> Settings -> Developper Settings -> Personnal Access Token -> Token (classic) -> Generate New Token (Classic)
 Note : WSL
 project
 
-# on ubuntu or wsl
+# Run on a Linux system or wsl
 Copy past token from gihub
 
 ```
