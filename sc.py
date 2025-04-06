@@ -133,18 +133,18 @@ parser.add_argument('-w','--cellwidth',default=cell_size,help='Width of the tile
 
 args = parser.parse_args()
 
-if args.o:
-    out_file=args.o
-if args.m and int(args.m) >= 5 and int(args.m) <= 100:
-    MAP_SIZE=args.m
-if args.f and int(args.f) >= 2 and int(args.f) <= 8:
-    FACTION_NUM=args.f
-if args.s and int(args.s) >= 1 and int(args.s) <= 999:
-    FACTION_SIZE=args.s
-if args.t and int(args.t) >= 1 and int(args.t) <= 10:
-    cell_height=args.t    
-if args.w and int(args.w) >= 1 and int(args.w) <= 10:
-    cell_height=args.w
+if args.outputfile:
+    out_file=args.outputfile
+if args.mapsize and int(args.mapsize) >= 5 and int(args.mapsize) <= 100:
+    MAP_SIZE=args.mapsize
+if args.factions and int(args.factions) >= 2 and int(args.factions) <= 8:
+    FACTION_NUM=args.factions
+if args.factionsize and int(args.factionsize) >= 1 and int(args.factionsize) <= 999:
+    FACTION_SIZE=args.factionsize
+if args.cellthickness and int(args.cellthickness) >= 1 and int(args.cellthickness) <= 10:
+    cell_height=args.cellthickness   
+if args.cellwidth and int(args.cellwidth) >= 1 and int(args.cellwidth) <= 10:
+    cell_size=args.cellwidth
     
 
 
