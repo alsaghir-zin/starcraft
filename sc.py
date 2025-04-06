@@ -136,15 +136,15 @@ args = parser.parse_args()
 if args.outputfile:
     out_file=args.outputfile
 if args.mapsize and int(args.mapsize) >= 5 and int(args.mapsize) <= 100:
-    MAP_SIZE=args.mapsize
+    MAP_SIZE=int(args.mapsize)
 if args.factions and int(args.factions) >= 2 and int(args.factions) <= 8:
-    FACTION_NUM=args.factions
+    FACTION_NUM=int(args.factions)
 if args.factionsize and int(args.factionsize) >= 1 and int(args.factionsize) <= 999:
-    FACTION_SIZE=args.factionsize
+    FACTION_SIZE=int(args.factionsize)
 if args.cellthickness and int(args.cellthickness) >= 1 and int(args.cellthickness) <= 10:
-    cell_height=args.cellthickness   
+    cell_height=int(args.cellthickness)   
 if args.cellwidth and int(args.cellwidth) >= 1 and int(args.cellwidth) <= 10:
-    cell_size=args.cellwidth
+    cell_size=int(args.cellwidth)
     
 
 
