@@ -125,26 +125,26 @@ out_file = open(out_file_name, 'w')
 # Parse the command line
 parser = argparse.ArgumentParser()
 parser.add_argument('-o', '--outputfile', default=out_file,help='File to collect the actions')
-parser.add_argument('-m','--mapsize',default=MAP_SIZE,help='Size of the square battlefield 5-100')
-parser.add_argument('-f','--factions',default=FACTION_NUM,help='Number of factions fighting 2-8')
-parser.add_argument('-s','--factionsize',default=FACTION_SIZE,help='Number of fighter per faction 5')
-parser.add_argument('-t','--cellthickness',default=cell_height,help='Height of the tile in character')
-parser.add_argument('-w','--cellwidth',default=cell_size,help='Width of the tile in charcher')
+parser.add_argument('-m','--mapsize',default=MAP_SIZE,help='Size of the square battlefield 5-100',type=int, choices=range(5, 101))
+parser.add_argument('-f','--factions',default=FACTION_NUM,help='Number of factions fighting 2-8',type=int, choices=range(2,9))
+parser.add_argument('-s','--factionsize',default=FACTION_SIZE,help='Number of fighter per faction 5',type=int, choices=range(2,10))
+parser.add_argument('-t','--cellthickness',default=cell_height,help='Height of the tile in character',type=int, choices=range(1,6))
+parser.add_argument('-w','--cellwidth',default=cell_size,help='Width of the tile in charcher',type=int, choices=range(1,6))
 
 args = parser.parse_args()
 
 if args.outputfile:
     out_file=args.outputfile
-if args.mapsize and int(args.mapsize) >= 5 and int(args.mapsize) <= 100:
-    MAP_SIZE=int(args.mapsize)
-if args.factions and int(args.factions) >= 2 and int(args.factions) <= 8:
-    FACTION_NUM=int(args.factions)
-if args.factionsize and int(args.factionsize) >= 1 and int(args.factionsize) <= 999:
-    FACTION_SIZE=int(args.factionsize)
-if args.cellthickness and int(args.cellthickness) >= 1 and int(args.cellthickness) <= 10:
-    cell_height=int(args.cellthickness)   
-if args.cellwidth and int(args.cellwidth) >= 1 and int(args.cellwidth) <= 10:
-    cell_size=int(args.cellwidth)
+if args.mapsize:
+    MAP_SIZE=args.mapsize
+if args.factions:
+    FACTION_NUM=args.factions
+if args.factionsize:
+    FACTION_SIZE=args.factionsize
+if args.cellthickness:
+    cell_height=args.cellthickness   
+if args.cellwidth:
+    cell_size=args.cellwidth
     
 
 
