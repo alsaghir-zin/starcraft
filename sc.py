@@ -91,7 +91,7 @@ live_map = False
 faction_status = False
 start_gun = Condition()
 prompt="cmd# "
-press="Please press enter to enter commands"
+press="Esc or any key to  enter commands"
 cliwin = None
 cadence = True           # All fighter will wake up at the same time 
 war = True   # Battle is running
@@ -130,6 +130,9 @@ parser.add_argument('-f','--factions',default=FACTION_NUM,help='Number of factio
 parser.add_argument('-s','--factionsize',default=FACTION_SIZE,help='Number of fighter per faction 5',type=int, choices=range(2,10))
 parser.add_argument('-t','--cellthickness',default=cell_height,help='Height of the tile in character',type=int, choices=range(1,6))
 parser.add_argument('-w','--cellwidth',default=cell_size,help='Width of the tile in charcher',type=int, choices=range(1,6))
+parser.add_argument('-l','--livemap',default=live_map,help='Instant refresh of the map',action='store_true')
+parser.add_argument('--status',default=faction_status,help='Display status',action='store_true')
+
 
 args = parser.parse_args()
 
@@ -145,7 +148,10 @@ if args.cellthickness:
     cell_height=args.cellthickness   
 if args.cellwidth:
     cell_size=args.cellwidth
-    
+if args.livemap:
+    live_map=args.livemap
+if args.status:
+    faction_status=args.status 
 
 
 for id,type in enumerate(unit_types):
@@ -527,24 +533,33 @@ def cli_thread(thread_id,condition_map):
       cliwin.addstr(0,0,press, curses.A_BOLD | curses.color_pair(1))
       cliwin.move(0,len(press))
       cliwin.refresh()
-      input_str = cliwin.getstr(0,len(press), 1)
+      #input_str = cliwin.getstr(0,len(press), 1)
+      cliwin.getch() 
       cliwin.addstr(0,0,"Refresh is paused but the battle is still raging", curses.A_BOLD | curses.color_pair(1))
       cliwin.addstr(1,0,prompt, curses.A_BOLD|curses.A_BLINK | curses.color_pair(1))
       cliwin.refresh()
       refreshscreen=False
+      curses.echo()
       input_str = cliwin.getstr(1,len(prompt), 20)  # Max 20 chars
+      curses.noecho()
       cliwin.clear()
       cliwin.refresh()
        
       command=input_str.decode('utf-8') 
       print(f"{epoch:<4}[Prompt] /{command}/", file=out_file, end="\n") 
       refreshscreen=True
-      if command == "exit":
+      if command.lower() == "exit":
        cliwin.clear()
        cliwin.refresh()
        war=False
-       cvnotify(condition_map)   
-      if command.lower in  ("r","refresh"):
+       cvnotify(condition_map)
+      if command.lower() in  ["h","help","?"]:
+       print(f"{epoch:<4}[Help] ", file=out_file, end="\n")
+       cliwin.addstr(1,0,"Press a key") 
+       cliwin.addstr(0,0,"help , live , status , spawn 5 1 melee ,  spawn 3 1 ranged")
+       cliwin.refresh()
+       cliwin.getch()  
+      if command.lower() in  ("r","refresh"):
        cvnotify(condition_map)
       if command.lower() in ( "l" ,"live"):
        live_map=True
@@ -717,7 +732,7 @@ def spawn(faction,kind):
                  cvnotify(condition_map)
                 units += 1
                 giveashot=-units
-
+ return(giveashot) 
  
 # Create a list to hold our thread objects.
 
