@@ -135,15 +135,15 @@ args = parser.parse_args()
 
 if args.o:
     out_file=args.o
-if args.m and int(args.m) >= 5 and int(args.m) =< 100:
+if args.m and int(args.m) >= 5 and int(args.m) <= 100:
     MAP_SIZE=args.m
-if args.f and int(args.f) >= 2 and int(args.f) =< 8:
+if args.f and int(args.f) >= 2 and int(args.f) <= 8:
     FACTION_NUM=args.f
-if args.s and int(args.s) >= 1 and int(args.s) =< 999:
+if args.s and int(args.s) >= 1 and int(args.s) <= 999:
     FACTION_SIZE=args.s
-if args.h and int(args.h) >= 1 and int(args.h) =< 10:
+if args.h and int(args.h) >= 1 and int(args.h) <= 10:
     cell_height=args.h    
-if args.w and int(args.w) >= 1 and int(args.w) =< 10:
+if args.w and int(args.w) >= 1 and int(args.w) <= 10:
     cell_height=args.w
     
 
