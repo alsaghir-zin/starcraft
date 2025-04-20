@@ -27,6 +27,7 @@ def clear():
     # check and make call for specific operating system
     _ = call('clear' if os.name == 'posix' else 'cls')
 
+# 4.2 Each faction has access to the same two unit types but with distinct health and attack values: 
 unit_types = [
     {
         'name': "Melee",
@@ -37,7 +38,8 @@ unit_types = [
         'health': 120,
         'min': 20,
         'max': 30,
-        'range': 0
+        'range': 0,
+        'weapon': "axe"
     },
     {
         'name': "Ranged",
@@ -48,11 +50,12 @@ unit_types = [
         'health': 80,
         'min': 10,
         'max': 20,
-        'range': 1
+        'range': 1,
+        'weapon': "bow"
     }
 ]
 
-unit_curses = [curses.A_UNDERLINE,curses.A_NORMAL]
+unit_curses = [curses.A_UNDERLINE,curses.A_NORMAL] # melee with underline and ranged is normal 
 
 faction_name = [
     "Uni staff", "The Goblins", "The Orcs", "The Trolls", "The Giants",
@@ -76,12 +79,12 @@ faction_curses = [
 
 # Global variable shared by all threads.
 
-FACTION_NUM = 2  # 4  # 2 -> 8
+FACTION_NUM = 2  # 4  # 2 -> 8     # 4.1 The number of factions (players) can be set between 2 to 8.
 FACTION_SIZE = 5  # Numbers of warriors in each faction
-MAP_SIZE = 6  # 30 # 5 -> 100
+MAP_SIZE = 6  # 30 # 5 -> 100      # 4.1 The user can select a map size (MAP_SIZE x MAP_SIZE), where MAP_SIZE is in the range of [5, 100].
 low_thread_watermark = 3  # clock  + draw + main
 out_file_name = "battle_log.txt"
-number_of_unit_types = len(unit_types)
+number_of_unit_types = len(unit_types)  #the value always 2 
 seed = 4   # Seed for main thread
 epoch = 0  # Will be updated by the clock
 map_refresh_rate = 5 # 5 sec as per spec
@@ -252,7 +255,7 @@ class Fighter:
         self.epoch_last_move = 0
         self.epoch_last_attack = 0
         self.epoch_last_flush = 0
-        self.kill_count = 0
+        self.kill_count = 0                                                         #
         self.fighterlock = threading.Lock()
         self.id = id
         self.faction = faction
@@ -295,13 +298,13 @@ class Fighter:
                 file=out_file,
                 end="\n")
             return (success)
-        with self.fighterlock:
-         with target.fighterlock:
-            if self.epoch_last_attack < epoch and self.alive and target.alive and distance(
-                    self.location, target.location, self.range):
+        with self.fighterlock:                                                                                   # we protect the data of attacking fighter : health,alive,kill_count(victories)
+         with target.fighterlock:                                                                                # we protect the data of attacked fighter : health,alive,kill_count(victories)
+                # 4.4 Each unit attacks every 1 second. 
+            if self.epoch_last_attack < epoch and self.alive and target.alive and distance(self.location, target.location, self.range): # valid : epoch,both alive,range
                 damage = local_random.randint(self.min, self.max + 1)
-                target.health -= damage
-                self.epoch_last_attack = epoch
+                target.health -= damage                                                                          # 4.4 Damage is randomized within the unit’s attack range.
+                self.epoch_last_attack = epoch                                                                   
                 success = True
                 if target.health <= 0:
                     target.health = 0
@@ -756,9 +759,9 @@ threads.append(t)
 t.start()
 sleep(2)
 
-for faction in range(0, FACTION_NUM):
-    for j in range(0, FACTION_SIZE):
-        kind=random.randint(0, number_of_unit_types - 1)
+for faction in range(0, FACTION_NUM):                         # 4.1 The number of factions (players) can be set between 2 to 8.
+    for j in range(0, FACTION_SIZE):                          # size of the faction (size of the team)
+        kind=random.randint(0, number_of_unit_types - 1)      # we have to choose between 0,1 (0 is melee and 1 is ranged )
         if spawn(faction,kind) == 0:
             print(f"{epoch:<4}[Units {units}] didnt find a place , aborting the battle",file=out_file,end="\n")
             war=False
