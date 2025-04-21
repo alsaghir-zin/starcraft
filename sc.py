@@ -56,17 +56,17 @@ unit_types = [
         'weapon': "bow"
     }
 ]
-
+# Melee will be show with an underscore
 unit_curses = [curses.A_UNDERLINE,curses.A_NORMAL] # melee with underline and ranged is normal 
 
+
+# Factions Name : 0->8
 faction_name = [
     "Uni staff", "The Goblins", "The Orcs", "The Trolls", "The Giants",
     "The Dragons", "The Golems", "The Gnomes"
 ]
-faction_color = [
-    'red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'black', 'grey'
-]
 
+# Faction Colors - libcurse way : 0->8
 faction_curses = [
     [curses.COLOR_WHITE,        curses.COLOR_BLACK],
     [curses.COLOR_GREEN, 	curses.COLOR_BLACK],
@@ -123,11 +123,7 @@ overflow=False
 if MAP_SIZE >= 24:
     cell_size = 1
     cell_height = 1
-#if MAP_SIZE > 24:
-#    lines = False
-#    walls = False
-#if FACTION_NUM * FACTION_SIZE > 10:
-#    cell_size = 2
+
 
 out_file = open(out_file_name, 'w')
 
@@ -181,7 +177,9 @@ def cvwait(cv,timeout=None):
          cv.wait(timeout=timeout)
         cv.release()
 
-
+# Class map with lock tilelock[] , one per tile to protect tiles subject during modification ( move in , move out or death of a unit )
+#                     maplock , to make or destroy a readonly copy of the map , only available during modification of the global map 
+                                            
 class Map:
     def __init__(self,size):
         self.maplock = threading.Lock()
@@ -190,7 +188,7 @@ class Map:
         self.pending = 0
         self.tilelock = [threading.Lock() for i in range(0, (MAP_SIZE * MAP_SIZE))]
 
-    def get(self):
+    def get(self):                # Present map or a copy of the map
      viewmap=[]
      with self.maplock:
         if len(self.copy)==0:
@@ -199,7 +197,7 @@ class Map:
             viewmap=self.copy # Changes are ongoing ... sorry
      return(viewmap)
     
-    def xerox(self):
+    def xerox(self):              # Duplicate map before doing a modification
      with self.maplock:
         # We take a copy if none exists
         if len(self.copy)==0: 
@@ -207,7 +205,7 @@ class Map:
         self.pending +=1 
    
 
-    def shred(self):
+    def shred(self):             # Destroy the duplicated map
       with  self.maplock:
         self.pending -=1
         # We a really destroying the map
@@ -215,7 +213,7 @@ class Map:
          self.copy = []
 
 
-    def moveto(self,previous,location,unit):
+    def moveto(self,previous,location,unit):   # Modify some tiles
         self.xerox()
         # From this point get() will provide self.copy and not self.map
         if previous < 0 or previous >= MAP_SIZE * MAP_SIZE or location < 0 or location >= MAP_SIZE * MAP_SIZE:
@@ -243,7 +241,7 @@ class Map:
         # From this point we will destroy self.copy if nobody is changing the map
         self.shred()
 
-    def bury(self,location,unit): # A fighter is leaving the battlefield
+    def bury(self,location,unit): # A fighter is leaving the battlefield - modify a tile
         self.xerox()
         # From this point get() will provide self.copy and not self.map
         self.tilelock[location].acquire()
@@ -255,9 +253,10 @@ class Map:
         # From this point we will destroy self.copy if nobody is changing the map
         self.shred()
         
-
+# Class fighter with proctection "fighterlock" : health,alive,kill_count ( aka victories ) for method attack
+#                                                location, prev_location for method walk()                                                           
+#                                                nowere in the code this attributes are changed ( __init__ or under lock protection in method attack or walk  ) 
 class Fighter:
-
     def __init__(self,executor,army,id, kind, faction, location):
         self.epoch_last_move = 0
         self.epoch_last_attack = 0
@@ -328,6 +327,7 @@ class Fighter:
                     log_queue.put_nowait(f"[Faction {army[self.id].faction_name}] {army[self.id].name} #{self.id}  {dposition(army[self.id].location)} attacked [Faction {army[target.id].faction_name}] {target.name} #{target.id} {dposition(army[target.id].location)}, dealing {damage} decajoule damage (health = {target.health})")    
         return (success)
 
+#  End of class Fighter
 
 def dposition(x):
     return (f"({x//MAP_SIZE+1},{x%MAP_SIZE+1})" if x < MAP_SIZE *
@@ -389,59 +389,10 @@ def random_pos(position, local_random):
 
 
 
-def print_map():
-    global battlemap
-    global army
-    global mapbuffer
-    global factionbuffer
-    allfactions = {}
-    i = 0
-    j = 0
-    mapbuffer=""
-    factionbuffer=""
-    map=battlemap.get()
-    if lines:
-        mapbuffer += ''.ljust((cell_size + 2) * MAP_SIZE + 1, '-') + "\n"
-    for i in range(0, MAP_SIZE):
-        if walls:
-            mapbuffer += "|"
-        for j in range(0, MAP_SIZE):
-            rawbuffer = ",".join("%s%d" %
-                                 (unit_types[army[x].kind]["nickname"], x)
-                                 for x in map[i * MAP_SIZE + j])
-            lpadding = cell_size+1 - len(rawbuffer)
-            if lpadding <= 0:
-                lpadding = 0
-                padding = ""
-            else:
-                padding = ' '.ljust(lpadding)
-            buffer = ",".join(
-                colored(
-                    "%s%s%d%s" % (unit_types[army[x].kind]["start"],
-                                  unit_types[army[x].kind]["nickname"], x,
-                                  unit_types[army[x].kind]["end"]),
-                    faction_color[army[x].faction])
-                for x in map[i * MAP_SIZE + j])
-            mapbuffer += f"{buffer}{padding}"
-            if walls:
-                mapbuffer += "|"
-        mapbuffer += "\n"
-        if lines:
-            mapbuffer += ''.ljust((cell_size + 2) * MAP_SIZE + 1, '-') + "\n"
-    for x in range(FACTION_NUM):
-        factionbuffer +=  colored(f"{faction_name[x]:<16}", faction_color[x])
-        for y in army:
-            if y.faction == x:
-                factionbuffer += f"{y.id:<3}"
-        factionbuffer += " -- " 
-        for y in army:
 
-            if y.faction == x:
-                factionbuffer +=  f"{y.health:<4}"
-    
+  
 
-
-def maincurses(stdscr):
+def maincurses_thread(stdscr):
     global low_thread_watermark
     global prewar
     global cooldown
@@ -825,8 +776,8 @@ start_gun.acquire()
 start_gun.notify_all()
 start_gun.release()
 
-
-curses.wrapper(maincurses)
+# This also a thread
+curses.wrapper(maincurses_thread)
 
 
     
