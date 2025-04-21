@@ -277,9 +277,6 @@ class Fighter:
         self.location = location
         self.prev_location = self.location
         army.append(self)
-        #self.t = threading.Thread(target=fighter_thread,args=(id,seed,condition_map,))
-        #threads.append(self.t)
-        #self.t.start()
         self.executor = executor
         self.local_random_t = random.Random()
         self.local_random_m = random.Random()
@@ -490,6 +487,7 @@ def cli_thread():
     global overflow
     global live_map
     global condition_map
+    global press
     
     local_epoch = 0
     while prewar or war or cooldown:
@@ -512,11 +510,12 @@ def cli_thread():
       command=input_str.decode('utf-8') 
       log_queue.put_nowait(f"[Prompt] /{command}/") 
       refreshscreen=True
-      if command.lower() == "exit":
+      if command.lower() in  ("exit","quit","bye"):
        cliwin.clear()
        cliwin.refresh()
        war=False
        cooldown=True
+       press=" Battle is over "
        cvnotify(condition_map)
       if command.lower() in  ["h","help","?"]:
        log_queue.put_nowait(f"[Help] ")
@@ -612,14 +611,14 @@ def commander_thread(faction_id, seed):
     while prewar:
      time.sleep(0.1)
     while war:
-     local_faction=list(map(lambda n: n.id,list(filter(lambda x: x.alive and x.faction == faction_id, army))))
+     local_faction=list(map(lambda n: n.id,list(filter(lambda x: x.alive and x.faction == faction_id, army))))           # My people which are still alive
      if len(local_faction) == 0:
       log_queue.put_nowait(f"[Commander] of {faction_name[faction_id]} is leaving")
       break
-     local_results=faction_executor[faction_id].map(fighter_thread,local_random_c.sample(local_faction,len(local_faction)))
+     local_results=faction_executor[faction_id].map(fighter_task,local_random_c.sample(local_faction,len(local_faction))) # Submit to a threadpool a task per  fighter
      refresh = False
      for local_result in local_results:
-      if local_result > 0 and local_result < 16:
+      if local_result > 0 and local_result < 16:    # Detect if our people did something
        refresh = True
      if live_map and refresh: 
              cvnotify(condition_map)
@@ -629,7 +628,7 @@ def commander_thread(faction_id, seed):
               
 
 
-def fighter_thread(thread_id):
+def fighter_task(thread_id):
     # Local variable specific to each thread.
     global epoch
     global war
@@ -646,16 +645,17 @@ def fighter_thread(thread_id):
             return(status)
 
         if war and army[thread_id].alive and ( army[thread_id].epoch_last_attack < epoch or army[thread_id].epoch_last_move < epoch ):
-         # Check if attack possible
+         # Check if attack possible                                                         # 2: If multiple enemy units occupy the same tile 
          hostiles = possible_attack(army[thread_id].location, thread_id,
                                    army[thread_id].range,
                                    army[thread_id].faction)
         
          if army[thread_id].epoch_last_attack < epoch and len(hostiles):
-            for target in army[thread_id].local_random_t.sample(hostiles, len(hostiles)):
+            for target in army[thread_id].local_random_t.sample(hostiles, len(hostiles)):    # 2: [...] randomly selects a target 
                 if army[thread_id].epoch_last_attack < epoch and army[target].alive:                     
-                    if army[thread_id].attack(army[target], army[thread_id].local_random_d) and not army[target].alive:
-                     battlemap.bury(army[target].location,target)
+                    if army[thread_id].attack(army[target], army[thread_id].local_random_d): # 2: to attack.
+                     if not army[target].alive:  
+                      battlemap.bury(army[target].location,target)
                      status += 4
                      #log_queue.put_nowait(f"Attack",thread_id,army[thread_id].epoch_last_attack, hostiles)
          else:
@@ -689,9 +689,9 @@ def log_thread():
     global war
     global prewar
     global log_queue
-    while prewar or  war or cooldown:  # Main , the clock and the display
+    while prewar or  war or cooldown: 
         try:
-            msg = log_queue.get()
+            msg = log_queue.get()      # We read the message
             if msg == "QUIT":
                 break
             print(f"{epoch:<4}{msg}",file=out_file, end="\n")
@@ -709,9 +709,9 @@ def spawn(faction,kind):
  if True:
         giveashot=10000
         while giveashot > 0:
-            candidateposition = random.randint(0, MAP_SIZE * MAP_SIZE-1)  # Global random
+            candidateposition = random.randint(0, MAP_SIZE * MAP_SIZE-1)  # Global random # 2 Each faction’s units spawn at random locations, maintaining at least one tile of separation from other factions.
             giveashot -= 1
-            if len(possible_attack(candidateposition, units, 1, faction, all=True)) == 0:
+            if len(possible_attack(candidateposition, units, 1, faction, all=True)) == 0: # 2 [...] at least one tile of separation from other factions
                 fighter=Fighter(faction_executor[faction],army,units,kind, faction,
                         candidateposition)
                 battlemap.moveto(candidateposition,candidateposition,units)

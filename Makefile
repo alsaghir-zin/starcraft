@@ -9,6 +9,9 @@ run: pull
 
 live: pull
 	./sc.py -l --status
+
+help: pull
+	./sc.py -h
 	
 push:
 	-git add .
