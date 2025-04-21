@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from threading import Condition
+import concurrent.futures
 import threading
 import time
 import random
@@ -9,6 +10,7 @@ import sys
 import os
 import curses
 import re
+import queue
 
 # Dynamic population
 
@@ -82,7 +84,9 @@ faction_curses = [
 FACTION_NUM = 2  # 4  # 2 -> 8     # 4.1 The number of factions (players) can be set between 2 to 8.
 FACTION_SIZE = 5  # Numbers of warriors in each faction
 MAP_SIZE = 6  # 30 # 5 -> 100      # 4.1 The user can select a map size (MAP_SIZE x MAP_SIZE), where MAP_SIZE is in the range of [5, 100].
-low_thread_watermark = 3  # clock  + draw + main
+MAX_WORKER_PER_FACTION = 8
+faction_executor = [None] * 8      # Store the thread pool 
+low_thread_watermark = 4  # clock  + draw + logger + main
 out_file_name = "battle_log.txt"
 number_of_unit_types = len(unit_types)  #the value always 2 
 seed = 4   # Seed for main thread
@@ -212,7 +216,7 @@ class Map:
         self.xerox()
         # From this point get() will provide self.copy and not self.map
         if previous < 0 or previous >= MAP_SIZE * MAP_SIZE or location < 0 or location >= MAP_SIZE * MAP_SIZE:
-           print(f"{epoch:<4}[Faction {army[unit].faction_name}] {army[unit].name} #{unit} invalid location {previous } {location}",file=out_file,end="\n")  
+           log_queue.put_nowait(f"[Faction {army[unit].faction_name}] {army[unit].name} #{unit} invalid location {previous } {location}")  
            return
         
         # Start of the tile protection
@@ -251,7 +255,7 @@ class Map:
 
 class Fighter:
 
-    def __init__(self,threads,army,id, kind, faction, location):
+    def __init__(self,executor,army,id, kind, faction, location):
         self.epoch_last_move = 0
         self.epoch_last_attack = 0
         self.epoch_last_flush = 0
@@ -271,11 +275,20 @@ class Fighter:
         self.location = location
         self.prev_location = self.location
         army.append(self)
-        self.t = threading.Thread(target=fighter_thread,args=(id,seed,condition_map,))
-        threads.append(self.t)
-        self.t.start()
+        #self.t = threading.Thread(target=fighter_thread,args=(id,seed,condition_map,))
+        #threads.append(self.t)
+        #self.t.start()
+        self.executor = executor
+        self.local_random_t = random.Random()
+        self.local_random_m = random.Random()
+        self.local_random_d = random.Random()
+        if seed > 0:
+         self.local_random_t.seed(seed + 2048 + id) # Random for target 
+         self.local_random_m.seed(seed + 3072 + id) # Random for move
+         self.local_random_d.seed(seed + 4096 + id) # Random for dammage 
+         
 
-    def walk(self, location,condition_map):
+    def walk(self, location):
         if not self.alive:
             return
         success = False
@@ -293,10 +306,7 @@ class Fighter:
         if not (self.alive and target.alive):
             return (success)
         if target.faction == self.faction:  # Normally already filtered out
-            print(
-                f"{epoch:<4}[Faction {army[self.id].faction_name}] {army[self.id].name} #{self.id} cowardly tried to  {target.name} #{target.id} from the same faction",
-                file=out_file,
-                end="\n")
+            log_queue.put_nowait(f"[Faction {army[self.id].faction_name}] {army[self.id].name} #{self.id} cowardly tried to  {target.name} #{target.id} from the same faction")
             return (success)
         with self.fighterlock:                                                                                   # we protect the data of attacking fighter : health,alive,kill_count(victories)
          with target.fighterlock:                                                                                # we protect the data of attacked fighter : health,alive,kill_count(victories)
@@ -310,15 +320,9 @@ class Fighter:
                     target.health = 0
                     target.alive = False
                     self.kill_count += 1
-                    print(
-                        f"{epoch:<4}[Faction {army[target.id].faction_name}] {target.name} #{target.id} {dposition(army[target.id].location)} was eliminated by [Faction {army[self.id].faction_name}] {self.name} #{self.id} {dposition(army[self.id].location)} with a  {damage} decajoule strike",
-                        file=out_file,
-                        end="\n")
+                    log_queue.put_nowait(f"[Faction {army[target.id].faction_name}] {target.name} #{target.id} {dposition(army[target.id].location)} was eliminated by [Faction {army[self.id].faction_name}] {self.name} #{self.id} {dposition(army[self.id].location)} with a  {damage} decajoule strike")
                 else:
-                    print(
-                        f"{epoch:<4}[Faction {army[self.id].faction_name}] {army[self.id].name} #{self.id}  {dposition(army[self.id].location)} attacked [Faction {army[target.id].faction_name}] {target.name} #{target.id} {dposition(army[target.id].location)}, dealing {damage} decajoule damage (health = {target.health})",
-                        file=out_file,
-                        end="\n")    
+                    log_queue.put_nowait(f"[Faction {army[self.id].faction_name}] {army[self.id].name} #{self.id}  {dposition(army[self.id].location)} attacked [Faction {army[target.id].faction_name}] {target.name} #{target.id} {dposition(army[target.id].location)}, dealing {damage} decajoule damage (health = {target.health})")    
         return (success)
 
 
@@ -418,12 +422,10 @@ def print_map():
             mapbuffer += f"{buffer}{padding}"
             if walls:
                 mapbuffer += "|"
-        #print(end="\n")
         mapbuffer += "\n"
         if lines:
             mapbuffer += ''.ljust((cell_size + 2) * MAP_SIZE + 1, '-') + "\n"
     for x in range(FACTION_NUM):
-        #print(colored(f"{faction_name[x]:<16}", faction_color[x]), end="")
         factionbuffer +=  colored(f"{faction_name[x]:<16}", faction_color[x])
         for y in army:
             if y.faction == x:
@@ -432,7 +434,6 @@ def print_map():
         for y in army:
 
             if y.faction == x:
-                #print(f"{y.health:<4}", end=" ")
                 factionbuffer +=  f"{y.health:<4}"
     
 
@@ -443,12 +444,14 @@ def maincurses(stdscr):
     global cliwin
     global refreshscreen
     global faction_status
+    global condition_map
+    global war
     local_epoch = 0
     local_buffer=""
     map=battlemap.get()
     screenh, screenw = stdscr.getmaxyx()
     stdscr.erase()
-    print(f"{epoch:<4}[Screen] {screenh}x{screenw}",file=out_file,end="\n")
+    log_queue.put_nowait(f"[Screen] {screenh}x{screenw}")
     curses.start_color()
     curses.use_default_colors()
     # Define some color pairs (foreground, background)
@@ -519,9 +522,9 @@ def maincurses(stdscr):
       # Wait 5 sec or a refresh ...
       cvwait(condition_map,timeout=map_refresh_rate)
     stdscr.erase()
-
+    print(f"{epoch:<4}[Draw] is leaving", file=out_file, end="\n")
  
-def cli_thread(thread_id,condition_map):
+def cli_thread():
     global low_thread_watermark
     global peace
     global war
@@ -530,8 +533,10 @@ def cli_thread(thread_id,condition_map):
     global faction_status
     global overflow
     global live_map
+    global condition_map
+    
     local_epoch = 0
-    while peace or threading.active_count() > low_thread_watermark:
+    while peace or ( war and threading.active_count() > low_thread_watermark ):
      if cliwin:
       cliwin.addstr(0,0,press, curses.A_BOLD | curses.color_pair(1))
       cliwin.move(0,len(press))
@@ -549,7 +554,7 @@ def cli_thread(thread_id,condition_map):
       cliwin.refresh()
        
       command=input_str.decode('utf-8') 
-      print(f"{epoch:<4}[Prompt] /{command}/", file=out_file, end="\n") 
+      log_queue.put_nowait(f"[Prompt] /{command}/") 
       refreshscreen=True
       if command.lower() == "exit":
        cliwin.clear()
@@ -557,7 +562,7 @@ def cli_thread(thread_id,condition_map):
        war=False
        cvnotify(condition_map)
       if command.lower() in  ["h","help","?"]:
-       print(f"{epoch:<4}[Help] ", file=out_file, end="\n")
+       log_queue.put_nowait(f"[Help] ")
        cliwin.addstr(1,0,"Press a key") 
        cliwin.addstr(0,0,"help , live , status , spawn 5 1 melee ,  spawn 3 1 ranged")
        cliwin.refresh()
@@ -575,7 +580,7 @@ def cli_thread(thread_id,condition_map):
         cvnotify(condition_map)
       answer=re.findall(r'spawn\s+(\d+)\s+(\d+)\s+(melee|ranged)',command )
       if len(answer):
-         print(f"{epoch:<4}[Spawn] parameters {answer}",file=out_file,end="\n") 
+         log_queue.put_nowait(f"[Spawn] parameters {answer}") 
          localfaction=int(answer[0][1])
          localpopulation=int(answer[0][0])
          localkindtext=answer[0][2].lower()
@@ -585,29 +590,30 @@ def cli_thread(thread_id,condition_map):
            while localpopulation > 0:
             overflow=True
             spawn(localfaction,kind)
-            print(f"{epoch:<4}[Spawn] birth in faction {localfaction} kind {kind}",file=out_file,end="\n")
+            log_queue.put_nowait(f"[Spawn] birth in faction {localfaction} kind {kind}")
             localpopulation -= 1 
           else:
-           print(f"{epoch:<4}[Spawn] faction {localfaction} is unkown",file=out_file,end="\n")
+           log_queue.put_nowait(f"[Spawn] faction {localfaction} is unkown")
          else:
-          print(f"{epoch:<4}[Spawn] type {localkindtext} is unkown",file=out_file,end="\n")  
+          log_queue.put_nowait(f"[Spawn] type {localkindtext} is unkown")  
               
         
      else:
       sleep(1)
-
+    print(f"{epoch:<4}[Cli] is leaving", file=out_file, end="\n")
+    
 # Not perfect but will be more repeatable ( cf seed stuff )
-def clock_thread(thread_id,condition_map):
+def clock_thread():
     global epoch
     global war
     global low_thread_watermark
-    
+    global condition_map
+    global log_queue
     start_gun.acquire()
     start_gun.wait()
     start_gun.release()
 
-    while peace or threading.active_count(
-    ) > low_thread_watermark:  # Main , the clock and the display
+    while peace or ( war and threading.active_count() > low_thread_watermark ):  # Main , the clock and the display
         for tick in range(100):
             clock_tick.acquire()
             time.sleep(0.01)
@@ -621,100 +627,117 @@ def clock_thread(thread_id,condition_map):
          if war and len(factions_left) == 1:
             war = False
             winner = next(iter(factions_left))
-            print(f"{epoch:<4}[Faction {winner}] wins the battle!",
-                  file=out_file,
-                  end="\n")
+            log_queue.put_nowait(f"[Faction {winner}] wins the battle!")
             if live_map: 
              cvnotify(condition_map)
         print(file=out_file, end="", flush=True)
 
-    print(f"{epoch:<4}[Clock] is leaving", file=out_file, end="\n")
-
-
-def fighter_thread(thread_id, seed,condition_map):
-    # Local variable specific to each thread.
+    log_queue.put_nowait(f"[Clock] is leaving")
+    log_queue.put_nowait("QUIT")
+    
+def commander_thread(faction_id, seed):
     global epoch
     global war
-    local_random_t = random.Random()
-    local_random_m = random.Random()
-    local_random_d = random.Random()
-    if seed > 0:
-        local_random_t.seed(seed + 1024 + thread_id) # Random for target 
-        local_random_m.seed(seed + 2048 + thread_id) # Random for move
-        local_random_d.seed(seed + 2048 + thread_id) # Random for dammage 
     global battlemap
     global army
+    global condition_map
+    global live_map
     start_gun.acquire()
     start_gun.wait()
     start_gun.release()
+    
+    local_random_c = random.Random()
+    if seed > 0:
+        local_random_c.seed(seed + 1024 + faction_id) # Random for commander 
+    log_queue.put_nowait(f"[Commander] of {faction_name[faction_id]} is ready to dispatch orders")
     while war:
+     local_faction=list(map(lambda n: n.id,list(filter(lambda x: x.alive and x.faction == faction_id, army))))
+     if len(local_faction) == 0:
+      log_queue.put_nowait(f"[Commander] of {faction_name[faction_id]} is leaving")
+      break
+     local_results=faction_executor[faction_id].map(fighter_thread,local_random_c.sample(local_faction,len(local_faction)))
+     refresh = False
+     for local_result in local_results:
+      if local_result > 0 and local_result < 16:
+       refresh = True
+     if live_map and refresh: 
+             cvnotify(condition_map)
+     if not refresh: # If nothing append we sleep , otherwise we try to immediatly attack or move
+      time.sleep(0.1)
+    log_queue.put_nowait(f"[Commander] of {faction_name[faction_id]} is gone") 
+              
+
+
+def fighter_thread(thread_id):
+    # Local variable specific to each thread.
+    global epoch
+    global war
+    global battlemap
+    global army
+    status = 0
+    
+    if war:
         # I am leaving this world
         if not army[thread_id].alive:
             battlemap.bury(army[thread_id].location,thread_id)
-            print(
-                f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} #{thread_id} died in {dposition(army[thread_id].location)} with {army[thread_id].kill_count} victory(ies)",
-                file=out_file,
-                end="\n")
-            break
+            log_queue.put_nowait(f"[Faction {army[thread_id].faction_name}] {army[thread_id].name} #{thread_id} died in {dposition(army[thread_id].location)} with {army[thread_id].kill_count} victory(ies)")
+            status += 2
+            return(status)
 
-        while war and army[thread_id].alive and ( army[thread_id].epoch_last_attack < epoch or army[thread_id].epoch_last_move < epoch ):
+        if war and army[thread_id].alive and ( army[thread_id].epoch_last_attack < epoch or army[thread_id].epoch_last_move < epoch ):
          # Check if attack possible
          hostiles = possible_attack(army[thread_id].location, thread_id,
                                    army[thread_id].range,
                                    army[thread_id].faction)
         
          if army[thread_id].epoch_last_attack < epoch and len(hostiles):
-            for target in local_random_t.sample(hostiles, len(hostiles)):
+            for target in army[thread_id].local_random_t.sample(hostiles, len(hostiles)):
                 if army[thread_id].epoch_last_attack < epoch and army[target].alive:                     
-                    if army[thread_id].attack(army[target], local_random_d) and not army[target].alive:
+                    if army[thread_id].attack(army[target], army[thread_id].local_random_d) and not army[target].alive:
                      battlemap.bury(army[target].location,target)
-                     if live_map:
-                      cvnotify(condition_map)
-                     #print(f"{epoch:<4}Attack",thread_id,army[thread_id].epoch_last_attack, hostiles,file=out_file,end="\n")
-
+                     status += 4
+                     #log_queue.put_nowait(f"Attack",thread_id,army[thread_id].epoch_last_attack, hostiles)
          else:
           pass
-          #print(f"{epoch:<4}No attack",thread_id,army[thread_id].epoch_last_attack, hostiles,file=out_file,end="\n") 
-          time.sleep(0.01)
+          #log_queue.put_nowait(f"No attack",thread_id,army[thread_id].epoch_last_attack, hostiles) 
+
          # Check if move possible
          hostiles = possible_attack(army[thread_id].location, thread_id,
                                    army[thread_id].range,
                                    army[thread_id].faction)
          if army[thread_id].epoch_last_move < epoch and len(hostiles) == 0:
-            #print("Check for move no hostiles", army[thread_id].name,thread_id, hostiles)
+            #log_queue.put_nowait(f"Check for move no hostiles", army[thread_id].name,thread_id, hostiles)
             previouslocation = army[thread_id].location
-            location = random_pos(army[thread_id].location, local_random_m)
-            if army[thread_id].walk(location,condition_map):
+            location = random_pos(army[thread_id].location, army[thread_id].local_random_m)
+            if army[thread_id].walk(location):
                 # We update the map
                 battlemap.moveto(previouslocation,location,thread_id)
-                print(
-                    f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} #{thread_id} move from {dposition(army[thread_id].prev_location)} to {dposition(army[thread_id].location)}",
-                    file=out_file,
-                    end="\n")
-                if live_map:
-                 cvnotify(condition_map)
+                log_queue.put_nowait(f"[Faction {army[thread_id].faction_name}] {army[thread_id].name} #{thread_id} move from {dposition(army[thread_id].prev_location)} to {dposition(army[thread_id].location)}")
+                status += 8
          else:
-          pass
-          time.sleep(0.01)
+          pass # Cannot move
         else:
           pass
-          #print(f"{epoch:<4}Tour is complete",thread_id,army[thread_id].epoch_last_move,army[thread_id].epoch_last_attack,file=out_file,end="\n") 
-
-        if army[thread_id].epoch_last_flush < epoch:
-            army[thread_id].epoch_last_flush = epoch
-            print(file=out_file, end="", flush=True)
+          #log_queue.put_nowait(f"Tour is complete",thread_id,army[thread_id].epoch_last_move,army[thread_id].epoch_last_attack) 
+          status += 16
+       
         
-        if cadence:
-         time.sleep(0.1)
-         clock_tick.acquire()
-         clock_tick.wait()
-         clock_tick.release()
-        else:
-            time.sleep(0.1)  # Simulate work.
+        return(status)
 
-    if army[thread_id].alive:
-            print(f"{epoch:<4}[Faction {army[thread_id].faction_name}] {army[thread_id].name} #{thread_id} {dposition(army[thread_id].location)} going back home with {army[thread_id].kill_count} victory(ies)",file=out_file,end="\n")
-
+def log_thread():
+    global war
+    global peace
+    global log_queue
+    while peace or ( war and threading.active_count() > low_thread_watermark ):  # Main , the clock and the display
+        try:
+            msg = log_queue.get()
+            if msg == "QUIT":
+                break
+            print(f"{epoch:<4}{msg}",file=out_file, end="\n")
+        except Exception:
+            continue
+    print(f"{epoch:<4}[Logger is gone]", file=out_file, end="\n") 
+    
 def spawn(faction,kind):
  global units
  global threads
@@ -728,7 +751,7 @@ def spawn(faction,kind):
             candidateposition = random.randint(0, MAP_SIZE * MAP_SIZE-1)  # Global random
             giveashot -= 1
             if len(possible_attack(candidateposition, units, 1, faction, all=True)) == 0:
-                fighter=Fighter(threads,army,units,kind, faction,
+                fighter=Fighter(faction_executor[faction],army,units,kind, faction,
                         candidateposition)
                 battlemap.moveto(candidateposition,candidateposition,units)
                 if live_map:
@@ -743,33 +766,50 @@ battlemap=Map(MAP_SIZE)
 threads = []
 units = 0
 army = []
+armylock = threading.Lock()
+log_queue = queue.Queue()
+
 if seed > 0:
     random.seed(seed)  # Global random
 
-# Clock
-t = threading.Thread(target=clock_thread, args=(units,condition_map))
+
+# Log queue
+t = threading.Thread(target=log_thread, args=())
 threads.append(t)
 t.start()
-
 
 # Draw thread
-t = threading.Thread(target=clock_thread, args=(units,condition_map))
-t = threading.Thread(target=cli_thread, args=(units + 2,condition_map))
+t = threading.Thread(target=cli_thread, args=())
 threads.append(t)
 t.start()
+
 sleep(2)
+
+for faction in range(0, FACTION_NUM):
+ faction_executor[faction]=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKER_PER_FACTION)
 
 for faction in range(0, FACTION_NUM):                         # 4.1 The number of factions (players) can be set between 2 to 8.
     for j in range(0, FACTION_SIZE):                          # size of the faction (size of the team)
         kind=random.randint(0, number_of_unit_types - 1)      # we have to choose between 0,1 (0 is melee and 1 is ranged )
         if spawn(faction,kind) == 0:
-            print(f"{epoch:<4}[Units {units}] didnt find a place , aborting the battle",file=out_file,end="\n")
+            log_queue.put_nowait(f"[Units {units}] didnt find a place , aborting the battle")
             war=False
-
-
+for faction in range(0, FACTION_NUM):
+ t = threading.Thread(target=commander_thread,args=(faction,seed,))
+ threads.append(t)
+ t.start()
 
 sleep(0.5)
+
 peace=False
+
+# Clock
+t = threading.Thread(target=clock_thread, args=())
+threads.append(t)
+t.start()
+
+
+
 start_gun.acquire()
 start_gun.notify_all()
 start_gun.release()
