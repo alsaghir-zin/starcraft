@@ -314,8 +314,8 @@ class Fighter:
          with target.fighterlock:                                                                                # we protect the data of attacked fighter : health,alive,kill_count(victories)
                 # 4.4 Each unit attacks every 1 second. 
             if self.epoch_last_attack < epoch and self.alive and target.alive and distance(self.location, target.location, self.range): # valid : epoch,both alive,range
-                damage = local_random.randint(self.min, self.max + 1)
-                target.health -= damage                                                                          # 4.4 Damage is randomized within the unit’s attack range.
+                damage = local_random.randint(self.min, self.max)                                                # 4.4 Damage is randomized within the unit’s attack range.
+                target.health -= damage                                                                        
                 self.epoch_last_attack = epoch                                                                   
                 success = True
                 if target.health <= 0:
