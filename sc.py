@@ -545,7 +545,7 @@ def cli_thread():
           if localfaction >= 0 and localfaction < FACTION_NUM :
            while localpopulation > 0:
             overflow=True
-            spawn(localfaction,kind)
+            spawn(localfaction,kind)   # 2 At any time, the user may deploy reinforcements for any faction via terminal commands.
             log_queue.put_nowait(f"[Spawn] birth in faction {localfaction} kind {kind}")
             localpopulation -= 1 
           else:
@@ -592,8 +592,11 @@ def clock_thread():
     log_queue.put_nowait("QUIT")
     sleep(3)
     cooldown=False
-    
-def commander_thread(faction_id, seed):
+
+# 3 : Simultaneous combat processing—units must be able to attack in parallel without blocking each other.
+# 3 : Independent movement—no unit should wait for another before acting.
+# A thread per faction (the commander ) that will give batch of order to each live unit  ( that will not necesseraly succeed )
+def commander_thread(faction_id, seed): 
     global epoch
     global war
     global battlemap
@@ -685,13 +688,13 @@ def fighter_task(thread_id):
         
         return(status)
 
-def log_thread():
+def log_thread(): # threading reading a msg queue 3 : Efficient logging—game events should be recorded in a text file (battle_log.txt) without interrupting gameplay.
     global war
     global prewar
     global log_queue
     while prewar or  war or cooldown: 
         try:
-            msg = log_queue.get()      # We read the message
+            msg = log_queue.get()      # We read the message from a queue 
             if msg == "QUIT":
                 break
             print(f"{epoch:<4}{msg}",file=out_file, end="\n")
