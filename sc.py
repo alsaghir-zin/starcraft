@@ -100,9 +100,12 @@ start_gun = Condition()
 prompt="cmd# "
 press="Esc or any key to  enter commands"
 cliwin = None
-cadence = True           # All fighter will wake up at the same time 
-war = True   # Battle is running
-peace = True # Peace
+cadence = True           # All fighter will wake up at the same time
+
+prewar   = True    # Battle is imminent
+cooldown = False   # Battle is over
+war      = False   # Battle is running
+
 refreshscreen = True # Stop refreshing  
 cell_size = 5        # Cell size
 cell_height = 2 
@@ -440,7 +443,8 @@ def print_map():
 
 def maincurses(stdscr):
     global low_thread_watermark
-    global peace
+    global prewar
+    global cooldown
     global cliwin
     global refreshscreen
     global faction_status
@@ -473,7 +477,7 @@ def maincurses(stdscr):
     cliwin  = curses.newwin(cliwinheight,64,offseth,offsetw)
      
 
-    while peace or ( war and threading.active_count() > low_thread_watermark ):  
+    while prewar or  war or cooldown:
       if refreshscreen:
         factionwin.clear()
         for x in range(FACTION_NUM):
@@ -526,7 +530,8 @@ def maincurses(stdscr):
  
 def cli_thread():
     global low_thread_watermark
-    global peace
+    global prewar
+    global cooldown
     global war
     global cliwin
     global refreshscreen
@@ -536,7 +541,7 @@ def cli_thread():
     global condition_map
     
     local_epoch = 0
-    while peace or ( war and threading.active_count() > low_thread_watermark ):
+    while prewar or war or cooldown:
      if cliwin:
       cliwin.addstr(0,0,press, curses.A_BOLD | curses.color_pair(1))
       cliwin.move(0,len(press))
@@ -560,6 +565,7 @@ def cli_thread():
        cliwin.clear()
        cliwin.refresh()
        war=False
+       cooldown=True
        cvnotify(condition_map)
       if command.lower() in  ["h","help","?"]:
        log_queue.put_nowait(f"[Help] ")
@@ -606,6 +612,7 @@ def cli_thread():
 def clock_thread():
     global epoch
     global war
+    global cooldown
     global low_thread_watermark
     global condition_map
     global log_queue
@@ -613,7 +620,7 @@ def clock_thread():
     start_gun.wait()
     start_gun.release()
 
-    while peace or ( war and threading.active_count() > low_thread_watermark ):  # Main , the clock and the display
+    while prewar or war:  # Main , the clock and the display
         for tick in range(100):
             clock_tick.acquire()
             time.sleep(0.01)
@@ -621,19 +628,20 @@ def clock_thread():
              epoch = epoch + 1
             clock_tick.notify_all()
             clock_tick.release()
-        
-        if not peace:
-         factions_left = set([x.faction_name for x in army if x.alive])
-         if war and len(factions_left) == 1:
+        factions_left = set([x.faction_name for x in army if x.alive])
+        if war and len(factions_left) == 1:
+            cooldown = True
             war = False
             winner = next(iter(factions_left))
             log_queue.put_nowait(f"[Faction {winner}] wins the battle!")
             if live_map: 
              cvnotify(condition_map)
         print(file=out_file, end="", flush=True)
-
+    
     log_queue.put_nowait(f"[Clock] is leaving")
     log_queue.put_nowait("QUIT")
+    sleep(3)
+    cooldown=False
     
 def commander_thread(faction_id, seed):
     global epoch
@@ -650,6 +658,8 @@ def commander_thread(faction_id, seed):
     if seed > 0:
         local_random_c.seed(seed + 1024 + faction_id) # Random for commander 
     log_queue.put_nowait(f"[Commander] of {faction_name[faction_id]} is ready to dispatch orders")
+    while prewar:
+     time.sleep(0.1)
     while war:
      local_faction=list(map(lambda n: n.id,list(filter(lambda x: x.alive and x.faction == faction_id, army))))
      if len(local_faction) == 0:
@@ -726,9 +736,9 @@ def fighter_thread(thread_id):
 
 def log_thread():
     global war
-    global peace
+    global prewar
     global log_queue
-    while peace or ( war and threading.active_count() > low_thread_watermark ):  # Main , the clock and the display
+    while prewar or  war or cooldown:  # Main , the clock and the display
         try:
             msg = log_queue.get()
             if msg == "QUIT":
@@ -801,7 +811,8 @@ for faction in range(0, FACTION_NUM):
 
 sleep(0.5)
 
-peace=False
+war=True
+prewar=False
 
 # Clock
 t = threading.Thread(target=clock_thread, args=())
