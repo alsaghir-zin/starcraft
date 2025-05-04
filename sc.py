@@ -232,16 +232,19 @@ class Map:
            log_queue.put_nowait(f"[Faction {army[unit].faction_name}] {army[unit].name} #{unit} invalid location {previous } {location}")  
            return
         
-        # Start of the tile protection
-        with self.tilelock[(location+previous)%(MAP_SIZE * MAP_SIZE)]:       
+        # Start of the tile protection 
+        with self.tilelock[min(location,previous)]:        
           if location != previous:
-           try:
-            self.map[previous].remove(unit)
-           except ValueError:
-            pass
+           with self.tilelock[max(location,previous)]:
+            try:
+             self.map[previous].remove(unit)
+            except ValueError:
+             pass
           if unit not in self.map[location]:
-               self.map[location].append(unit)
-         
+            try:
+             self.map[location].append(unit)
+            except ValueError:
+             pass
         
         # From this point we will destroy self.copy if nobody is changing the map
         self.shred()
@@ -249,7 +252,7 @@ class Map:
     def bury(self,location,unit): # A fighter is leaving the battlefield - modify a tile
         self.xerox()
         # From this point get() will provide self.copy and not self.map
-        with self.tilelock[(location+location)%(MAP_SIZE * MAP_SIZE)]:
+        with self.tilelock[location]:
          try:
           self.map[location].remove(unit)
          except ValueError:
