@@ -12,6 +12,18 @@ import curses
 import re
 import queue
 
+
+# https://stackoverflow.com/questions/16740104/python-lock-with-statement-and-timeout 
+from contextlib import contextmanager
+@contextmanager
+def acquire_timeout(lock, timeout):
+    result = lock.acquire(timeout=timeout)
+    try:
+        yield result
+    finally:
+        if result:
+            lock.release()
+
 # Dynamic population
 
 # import call method from subprocess module
@@ -221,22 +233,15 @@ class Map:
            return
         
         # Start of the tile protection
-        if previous != location:
-         self.tilelock[previous].acquire()
-        self.tilelock[location].acquire() 
-        try:
+        with self.tilelock[(location+previous)%(MAP_SIZE * MAP_SIZE)]:       
+          if location != previous:
+           try:
             self.map[previous].remove(unit)
-        except ValueError:
-            pass        
-        if unit not in self.map[location]:
-         try:
-            self.map[location].append(unit)
-         except ValueError:
+           except ValueError:
             pass
-        # End of the tile protection 
-        self.tilelock[location].release()
-        if previous != location:
-         self.tilelock[previous].release()
+          if unit not in self.map[location]:
+               self.map[location].append(unit)
+         
         
         # From this point we will destroy self.copy if nobody is changing the map
         self.shred()
@@ -244,12 +249,11 @@ class Map:
     def bury(self,location,unit): # A fighter is leaving the battlefield - modify a tile
         self.xerox()
         # From this point get() will provide self.copy and not self.map
-        self.tilelock[location].acquire()
-        try:
-            self.map[location].remove(unit)
-        except ValueError:
-            pass
-        self.tilelock[location].release()
+        with self.tilelock[(location+location)%(MAP_SIZE * MAP_SIZE)]:
+         try:
+          self.map[location].remove(unit)
+         except ValueError:
+            pass 
         # From this point we will destroy self.copy if nobody is changing the map
         self.shred()
         
@@ -308,9 +312,9 @@ class Fighter:
             log_queue.put_nowait(f"[Faction {army[self.id].faction_name}] {army[self.id].name} #{self.id} cowardly tried to  {target.name} #{target.id} from the same faction")
             return (success)
         with self.fighterlock:                                                                                   # we protect the data of attacking fighter : health,alive,kill_count(victories)
-         with target.fighterlock:                                                                                # we protect the data of attacked fighter : health,alive,kill_count(victories)
+          with acquire_timeout(target.fighterlock,local_random.randint(0,500)/1000) as acquired:                  # we protect the data of attacked fighter : health,alive,kill_count(victories)
                 # 4.4 Each unit attacks every 1 second. 
-            if self.epoch_last_attack < epoch and self.alive and target.alive and distance(self.location, target.location, self.range): # valid : epoch,both alive,range
+            if acquired and self.epoch_last_attack < epoch and self.alive and target.alive and distance(self.location, target.location, self.range): # valid : epoch,both alive,range
                 damage = local_random.randint(self.min, self.max)                                                # 4.4 Damage is randomized within the unit’s attack range.
                 target.health -= damage                                                                        
                 self.epoch_last_attack = epoch                                                                   
@@ -473,9 +477,18 @@ def maincurses_thread(stdscr):
         cliwin.refresh()
       # Wait 5 sec or a refresh ...
       cvwait(condition_map,timeout=map_refresh_rate)
-    stdscr.erase()
+    factionwin.clear()
+    cliwin.clear()
+    mapwin.clear()
+    #stdscr.erase()
+
+    #curses.nocbreak()
+    #stdscr.keypad(False)
+    #curses.echo()
+    
     print(f"{epoch:<4}[Draw] is leaving", file=out_file, end="\n")
- 
+    sys.exit(0)
+    
 def cli_thread():
     global low_thread_watermark
     global prewar
@@ -510,7 +523,7 @@ def cli_thread():
       command=input_str.decode('utf-8') 
       log_queue.put_nowait(f"[Prompt] /{command}/") 
       refreshscreen=True
-      if command.lower() in  ("exit","quit","bye"):
+      if command.lower() in  ("exit","quit","bye","end","q"):
        cliwin.clear()
        cliwin.refresh()
        war=False
@@ -557,6 +570,7 @@ def cli_thread():
      else:
       sleep(1)
     print(f"{epoch:<4}[Cli] is leaving", file=out_file, end="\n")
+    sys.exit(0)
     
 # Not perfect but will be more repeatable ( cf seed stuff )
 def clock_thread():
@@ -592,7 +606,8 @@ def clock_thread():
     log_queue.put_nowait("QUIT")
     sleep(3)
     cooldown=False
-
+    sys.exit(0)
+    
 # 3 : Simultaneous combat processing—units must be able to attack in parallel without blocking each other.
 # 3 : Independent movement—no unit should wait for another before acting.
 # A thread per faction (the commander ) that will give batch of order to each live unit  ( that will not necesseraly succeed )
@@ -628,7 +643,7 @@ def commander_thread(faction_id, seed):
      if not refresh: # If nothing append we sleep , otherwise we try to immediatly attack or move
       time.sleep(0.1)
     log_queue.put_nowait(f"[Commander] of {faction_name[faction_id]} is gone") 
-              
+    sys.exit(0)         
 
 
 def fighter_task(thread_id):
@@ -700,7 +715,8 @@ def log_thread(): # threading reading a msg queue 3 : Efficient logging—game e
             print(f"{epoch:<4}{msg}",file=out_file, end="\n")
         except Exception:
             continue
-    print(f"{epoch:<4}[Logger is gone]", file=out_file, end="\n") 
+    print(f"{epoch:<4}[Logger is gone]", file=out_file, end="\n")
+    sys.exit(0)
     
 def spawn(faction,kind):
  global units
@@ -733,59 +749,68 @@ army = []
 armylock = threading.Lock()
 log_queue = queue.Queue()
 
+
+
 if seed > 0:
     random.seed(seed)  # Global random
 
+if __name__ =="__main__":
 
-# Log queue
-t = threading.Thread(target=log_thread, args=())
-threads.append(t)
-t.start()
+ # Log queue
+ t = threading.Thread(target=log_thread, args=())
+ threads.append(t)
+ t.start()
 
-# Draw thread
-t = threading.Thread(target=cli_thread, args=())
-threads.append(t)
-t.start()
+if __name__ =="__main__":
+ # Draw thread
+ t = threading.Thread(target=cli_thread, args=())
+ threads.append(t)
+ t.start()
 
-sleep(2)
+if __name__ =="__main__":
+ sleep(2)
 
-for faction in range(0, FACTION_NUM):
- faction_executor[faction]=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKER_PER_FACTION)
+ for faction in range(0, FACTION_NUM):
+  faction_executor[faction]=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKER_PER_FACTION)
 
-for faction in range(0, FACTION_NUM):                         # 4.1 The number of factions (players) can be set between 2 to 8.
+ for faction in range(0, FACTION_NUM):                         # 4.1 The number of factions (players) can be set between 2 to 8.
     for j in range(0, FACTION_SIZE):                          # size of the faction (size of the team)
         kind=random.randint(0, number_of_unit_types - 1)      # we have to choose between 0,1 (0 is melee and 1 is ranged )
         if spawn(faction,kind) == 0:
             log_queue.put_nowait(f"[Units {units}] didnt find a place , aborting the battle")
             war=False
-for faction in range(0, FACTION_NUM):
- t = threading.Thread(target=commander_thread,args=(faction,seed,))
+if __name__ =="__main__":
+ for faction in range(0, FACTION_NUM):
+  t = threading.Thread(target=commander_thread,args=(faction,seed,))
+  threads.append(t)
+  t.start()
+
+if __name__ =="__main__":
+ sleep(0.5)
+
+ war=True
+ prewar=False
+
+ # Clock
+ t = threading.Thread(target=clock_thread, args=())
  threads.append(t)
  t.start()
 
-sleep(0.5)
 
-war=True
-prewar=False
+if __name__ =="__main__":
+ start_gun.acquire()
+ start_gun.notify_all()
+ start_gun.release()
 
-# Clock
-t = threading.Thread(target=clock_thread, args=())
-threads.append(t)
-t.start()
+ # This also a thread
+ curses.wrapper(maincurses_thread)
+ curses.echo()
 
-
-
-start_gun.acquire()
-start_gun.notify_all()
-start_gun.release()
-
-# This also a thread
-curses.wrapper(maincurses_thread)
-
+ print("SALUT#####################################################")
 
     
-# Wait for all threads to complete.
-for t in threads:
+ # Wait for all threads to complete.
+ for t in threads:
     t.join()
 
 
